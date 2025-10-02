@@ -27,7 +27,8 @@ class ICD11Client:
         response = requests.post(
             self.config['token_endpoint'],
             data=payload,
-            verify=True
+            verify=True,
+            timeout=60  # ADD THIS LINE: Timeout in seconds
         )
         
         if response.status_code == 200:
@@ -59,7 +60,10 @@ class ICD11Client:
             'flatResults': True
         }
         
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=headers, 
+            params=params,
+            timeout=15  # ADD THIS LINE: Timeout in seconds
+        )
         
         if response.status_code == 200:
             data = response.json()

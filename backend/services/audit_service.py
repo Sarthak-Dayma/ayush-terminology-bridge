@@ -12,6 +12,7 @@ import uuid
 
 class AuditService:
     def __init__(self, db_path: str = 'data/audit_logs.db'):
+
         """Initialize audit database"""
         self.db_path = db_path
         self.init_database()
@@ -87,7 +88,19 @@ class AuditService:
                 top_searched_terms TEXT
             )
         ''')
-        
+
+        cursor.execute('''
+             CREATE TABLE IF NOT EXISTS fhir_resource_logs (
+                id TEXT PRIMARY KEY,
+                timestamp DATETIME NOT NULL,
+                user_id TEXT,
+                resource_type TEXT,
+                resource_id TEXT,
+                patient_id TEXT,
+                codes TEXT
+            )
+        ''')
+
         conn.commit()
         conn.close()
         print("✅ Audit database initialized")
@@ -96,6 +109,28 @@ class AuditService:
         """Generate SHA-256 checksum for audit integrity"""
         data_str = json.dumps(data, sort_keys=True)
         return hashlib.sha256(data_str.encode()).hexdigest()
+    
+    def log_fhir_resource(self, user_id: str, resource_type: str, resource_id: str, patient_id: str, codes: List[str]) -> str:
+        """Log FHIR resource creation"""
+        log_id = str(uuid.uuid4())
+        timestamp = datetime.now()
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO fhir_resource_logs (
+                id, timestamp, user_id, resource_type, resource_id, patient_id, codes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            log_id, timestamp, user_id, resource_type, resource_id,
+            patient_id, json.dumps(codes)
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return log_id
     
     def log_api_call(self, 
                      action_type: str,

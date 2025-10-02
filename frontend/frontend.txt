@@ -1,0 +1,1588 @@
+// app.js
+
+/**
+ * Main Application Logic for AYUSH Terminology Bridge
+ * Handles: Search, Translation, FHIR Generation
+ */
+
+
+
+// ============= SEARCH FUNCTIONALITY =============
+
+function handleSearchKeypress(event) {
+    if (event.key === 'Enter') {
+        searchCodes(); 
+    }
+}
+
+async function searchCodes() {
+    const query = document.getElementById('search-input').value.trim();
+    const useML = document.getElementById('use-ml-search').checked;
+    const limit = document.getElementById('search-limit').value;
+    const resultsDiv = document.getElementById('search-results');
+    
+    if (!query) {
+        resultsDiv.innerHTML = '<div class="alert alert-warning">Please enter a search query</div>'; 
+        return;
+    }
+    
+    // Show loading
+    resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
+    showLoadingSpinner(); 
+    try {
+        const url = `${API_BASE_URL}/api/terminology/search?q=${encodeURIComponent(query)}&limit=${limit}&use_ml=${useML}`;
+        const response = await authenticatedFetch(url);
+        const data = await response.json(); 
+        
+        if (response.ok) {
+            displaySearchResults(data);
+        } else {
+            resultsDiv.innerHTML = `<div class="alert alert-error">${data.error || 'Search failed'}</div>`; 
+        }
+    } catch (error) {
+        console.error('Search error:', error);
+        resultsDiv.innerHTML = '<div class="alert alert-error">Network error. Please try again.</div>'; 
+    } finally {
+        hideLoadingSpinner(); 
+    }
+}
+
+function displaySearchResults(data) {
+    const resultsDiv = document.getElementById('search-results'); 
+    if (data.results.length === 0) {
+        resultsDiv.innerHTML = `
+            <div class="alert alert-info">
+                <strong>No results found</strong>
+                <p>Try different search terms or check spelling</p>
+            </div>
+        `; 
+        return;
+    }
+    
+    let html = `
+        <div style="margin-bottom: 1rem;">
+            <strong>${data.count} results found</strong> in ${data.response_time_ms}ms
+            ${data.ml_enabled ? '<span class="badge" style="background: var(--success-color); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; margin-left: 0.5rem;">ML Enhanced</span>' : ''}
+        </div>
+    `; 
+    data.results.forEach(result => {
+        const matchScore = result.combined_score || result.match_score || 0;
+        const scorePercent = Math.round(matchScore * 100);
+        
+        html += `
+            <div class="result-item">
+                <div class="result-header">
+                    <span class="result-code">${result.code}</span>
+                    <span class="result-score">${scorePercent}% match</span>
+                </div>
+                <div class="result-display">${result.display}</div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.5rem;">${result.description}</p>
+                <div class="result-meta">
+                    <span><strong>System:</strong> ${result.system || 'NAMASTE'}</span>
+                    ${result.semantic_score ? `<span><strong>Semantic Score:</strong> ${(result.semantic_score * 100).toFixed(1)}%</span>` : ''}
+                </div>
+                <div class="result-actions">
+                    <button class="btn btn-primary" onclick="translateFromSearch('${result.code}')">
+                        🔄 Translate to ICD-11
+                    </button>
+                    <button class="btn btn-secondary" onclick="viewCodeDetails('${result.code}')">
+                        👁️ View Details
+                    </button>
+                </div>
+            </div>
+        `; 
+    });
+    
+    resultsDiv.innerHTML = html;
+}
+
+function translateFromSearch(code) {
+    // Scroll to translation section
+    document.getElementById('translate-input').value = code;
+    document.getElementById('translation-section').scrollIntoView({ behavior: 'smooth' }); 
+    
+    // Trigger translation after scroll
+    setTimeout(() => translateCode(), 500); 
+}
+
+function viewCodeDetails(code) {
+    // TODO: Implement code details modal
+    alert(`Viewing details for ${code}\nThis feature will show full NAMASTE code information.`); 
+}
+
+// ============= TRANSLATION FUNCTIONALITY =============
+
+async function translateCode() {
+    const namasteCode = document.getElementById('translate-input').value.trim();
+    const useML = document.getElementById('use-ml-translate').checked;
+    const resultsDiv = document.getElementById('translation-results'); 
+    
+    if (!namasteCode) {
+        resultsDiv.innerHTML = '<div class="alert alert-warning">Please enter a NAMASTE code</div>'; 
+        return;
+    }
+    
+    // Show loading
+    resultsDiv.innerHTML = '<div class="loading">Translating...</div>';
+    showLoadingSpinner(); 
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/terminology/translate`, {
+            method: 'POST',
+            body: JSON.stringify({
+                namaste_code: namasteCode,
+                use_ml: useML
+            })
+        }); 
+        const data = await response.json(); 
+        
+        if (response.ok) {
+            displayTranslationResults(data);
+        } else {
+            resultsDiv.innerHTML = `<div class="alert alert-error">${data.detail || 'Translation failed'}</div>`; 
+        }
+    } catch (error) {
+        console.error('Translation error:', error);
+        resultsDiv.innerHTML = '<div class="alert alert-error">Network error. Please try again.</div>'; 
+    } finally {
+        hideLoadingSpinner(); 
+    }
+}
+
+function displayTranslationResults(data) {
+    const resultsDiv = document.getElementById('translation-results');
+    
+    const namaste = data.namaste;
+    const tm2Matches = data.icd11_tm2_matches || [];
+    const bioMatches = data.icd11_biomedicine_matches || []; 
+    let html = `
+        <div class="translation-result">
+            <div class="translation-header">
+                <h3>Translation Results</h3>
+                <span style="color: var(--text-secondary);">${data.response_time_ms}ms</span>
+            </div>
+            
+            <div class="namaste-section">
+                <h4>📚 NAMASTE Code</h4>
+                <div style="margin-top: 0.75rem;">
+                    <div style="font-size: 1.25rem; font-weight: 600; color: var(--primary-color); margin-bottom: 0.5rem;">
+                        ${namaste.code}
+                    </div>
+                    <div style="font-size: 1rem; margin-bottom: 0.5rem;">
+                        ${namaste.display}
+                    </div>
+                    ${namaste.definition ? `<div style="color: var(--text-secondary); font-size: 0.9rem;">${namaste.definition}</div>` : ''}
+                </div>
+            </div>
+    `; 
+    // TM2 Matches
+    if (tm2Matches.length > 0) {
+        html += `
+            <div class="icd-section">
+                <h4>🌿 ICD-11 Traditional Medicine 2 (TM2)</h4>
+        `;
+        tm2Matches.slice(0, 5).forEach((match, index) => {
+            const mlScore = match.ml_score ? `<span class="match-score">ML: ${(match.ml_score * 100).toFixed(0)}%</span>` : '';
+            html += `
+                <div class="icd-match">
+                    <div class="icd-match-header">
+                        <span class="icd-code">${match.code}</span>
+                        ${mlScore}
+                    </div>
+                    <div style="font-weight: 500; margin-bottom: 0.25rem;">${match.title}</div>
+                    ${match.definition ? `<div style="color: var(--text-secondary); font-size: 0.875rem;">${match.definition}</div>` : ''}
+                    <button class="btn btn-secondary" style="margin-top: 0.5rem;" onclick="useFHIR('${namaste.code}', '${match.code}')">
+                        Use in FHIR
+                    </button>
+                </div>
+            `; 
+        });
+        
+        html += '</div>';
+    }
+    
+    // Biomedicine Matches
+    if (bioMatches.length > 0) {
+        html += `
+            <div class="icd-section" style="border-left-color: var(--warning-color);">
+                <h4 style="color: var(--warning-color);">🏥 ICD-11 Biomedicine (MMS)</h4>
+        `; 
+        bioMatches.slice(0, 5).forEach((match, index) => {
+            const mlScore = match.ml_score ? `<span class="match-score">ML: ${(match.ml_score * 100).toFixed(0)}%</span>` : '';
+            html += `
+                <div class="icd-match">
+                    <div class="icd-match-header">
+                        <span class="icd-code">${match.code}</span>
+                        ${mlScore}
+                    </div>
+                    <div style="font-weight: 500; margin-bottom: 0.25rem;">${match.title}</div>
+                    ${match.definition ? `<div style="color: var(--text-secondary); font-size: 0.875rem;">${match.definition}</div>` : ''}
+                    <button class="btn btn-secondary" style="margin-top: 0.5rem;" onclick="useFHIR('${namaste.code}', '${match.code}')">
+                        Use in FHIR
+                    </button>
+                </div>
+            `; 
+        });
+        
+        html += '</div>'; 
+    }
+    
+    if (tm2Matches.length === 0 && bioMatches.length === 0) {
+        html += '<div class="alert alert-warning">No ICD-11 matches found</div>'; 
+    }
+    
+    html += '</div>';
+    
+    resultsDiv.innerHTML = html; 
+}
+
+function useFHIR(namasteCode, icdCode) {
+    // Scroll to FHIR section and populate fields
+    document.getElementById('fhir-namaste-code').value = namasteCode;
+    const currentIcdCodes = document.getElementById('fhir-icd-codes').value; 
+    if (currentIcdCodes) {
+        document.getElementById('fhir-icd-codes').value = currentIcdCodes + ', ' + icdCode; 
+    } else {
+        document.getElementById('fhir-icd-codes').value = icdCode; 
+    }
+    
+    document.getElementById('fhir-section').scrollIntoView({ behavior: 'smooth' }); 
+}
+
+// ============= FHIR GENERATION =============
+
+async function generateFHIR() {
+    const namasteCode = document.getElementById('fhir-namaste-code').value.trim();
+    const icdCodesStr = document.getElementById('fhir-icd-codes').value.trim();
+    const patientId = document.getElementById('fhir-patient-id').value.trim(); 
+    const abhaId = document.getElementById('fhir-abha-id').value.trim();
+    const resultsDiv = document.getElementById('fhir-results'); 
+    if (!namasteCode || !icdCodesStr || !patientId) {
+        resultsDiv.innerHTML = '<div class="alert alert-warning">Please fill in all required fields</div>'; 
+        return;
+    }
+    
+    // Parse ICD codes
+    const icdCodes = icdCodesStr.split(',').map(code => code.trim()).filter(code => code); 
+    // Show loading
+    resultsDiv.innerHTML = '<div class="loading">Generating FHIR resource...</div>';
+    showLoadingSpinner(); 
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/fhir/Condition`, {
+            method: 'POST',
+            body: JSON.stringify({
+                namaste_code: namasteCode,
+                icd_codes: icdCodes,
+                patient_id: patientId,
+                abha_id: abhaId || null 
+            })
+        }); 
+        const data = await response.json();
+        
+        if (response.ok) {
+            displayFHIRResults(data); 
+        } else {
+            resultsDiv.innerHTML = `<div class="alert alert-error">${data.detail || 'FHIR generation failed'}</div>`; 
+        }
+    } catch (error) {
+        console.error('FHIR generation error:', error);
+        resultsDiv.innerHTML = '<div class="alert alert-error">Network error. Please try again.</div>';
+    } finally {
+        hideLoadingSpinner();
+    }
+}
+
+function displayFHIRResults(data) {
+    const resultsDiv = document.getElementById('fhir-results');
+    
+    const jsonStr = JSON.stringify(data, null, 2); 
+    let html = `
+        <div class="alert alert-success">
+            <strong>✅ FHIR Condition Resource Generated Successfully</strong>
+            <p>Resource ID: <code>${data.id}</code></p>
+        </div>
+        
+        <div style="margin-top: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3>FHIR R4 JSON</h3>
+                <button class="btn btn-secondary" onclick="copyFHIRToClipboard()">
+                    📋 Copy to Clipboard
+                </button>
+            </div>
+            <pre id="fhir-json-output" style="background: var(--bg-color); padding: 1.5rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border-color); font-size: 0.875rem;">${jsonStr}</pre>
+        </div>
+    `; 
+    resultsDiv.innerHTML = html;
+}
+
+function copyFHIRToClipboard() {
+    const jsonOutput = document.getElementById('fhir-json-output');
+    const text = jsonOutput.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('FHIR JSON copied to clipboard!', 'success');
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        showNotification('Copy failed', 'error');
+    }); 
+}
+
+// ============= INITIALIZATION =============
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('AYUSH Terminology Bridge App Initialized');
+});
+
+// auth.js
+
+/**
+ * Authentication Module for AYUSH Terminology Bridge
+ * Handles: Login, Logout, Token Management, Session Storage
+ */
+
+const API_BASE_URL = 'http://localhost:8000';
+
+// ============= TOKEN MANAGEMENT =============
+
+function getAuthToken() {
+    return localStorage.getItem('auth_token');
+}
+
+function setAuthToken(token) {
+    localStorage.setItem('auth_token', token);
+}
+
+function removeAuthToken() {
+    localStorage.removeItem('auth_token');
+}
+
+function getUserInfo() {
+    const userStr = localStorage.getItem('user_info');
+    return userStr ? JSON.parse(userStr) : null;
+}
+
+function setUserInfo(userInfo) {
+    localStorage.setItem('user_info', JSON.stringify(userInfo));
+}
+
+function removeUserInfo() {
+    localStorage.removeItem('user_info');
+}
+
+// ============= AUTH HEADERS =============
+
+function getAuthHeaders() {
+    const token = getAuthToken();
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+    };
+}
+
+// ============= LOGIN MODAL =============
+
+function showLoginModal() {
+    document.getElementById('login-modal').style.display = 'block';
+}
+
+function closeLoginModal() {
+    document.getElementById('login-modal').style.display = 'none';
+    document.getElementById('login-error').style.display = 'none';
+}
+
+// Close modal on outside click
+window.onclick = function(event) {
+    const modal = document.getElementById('login-modal');
+    if (event.target === modal) {
+        closeLoginModal();
+    }
+}
+
+// ============= LOGIN HANDLER =============
+
+async function handleLogin(event) {
+    event.preventDefault();
+    
+    const userId = document.getElementById('login-user-id').value;
+    const password = document.getElementById('login-password').value;
+    const errorDiv = document.getElementById('login-error');
+    
+    // Hide previous errors
+    errorDiv.style.display = 'none';
+    
+    // Show loading
+    showLoadingSpinner();
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                password: password
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Store token and user info
+            setAuthToken(data.access_token);
+            setUserInfo({
+                user_id: data.user_info.user_id,
+                name: data.user_info.name,
+                role: data.user_info.role,
+                abha_id: data.user_info.abha_id
+            });
+            
+            // Close modal and update UI
+            closeLoginModal();
+            updateUIForLoggedInUser();
+            
+            // Show success message
+            showNotification('Login successful!', 'success');
+            
+            // Reset form
+            document.getElementById('login-form').reset();
+        } else {
+            // Show error
+            errorDiv.textContent = data.error || 'Login failed';
+            errorDiv.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        errorDiv.textContent = 'Network error. Please try again.';
+        errorDiv.style.display = 'block';
+    } finally {
+        hideLoadingSpinner();
+    }
+}
+
+// ============= LOGOUT HANDLER =============
+
+async function logout() {
+    showLoadingSpinner();
+    
+    try {
+        // Call logout endpoint
+        await fetch(`${API_BASE_URL}/api/auth/logout`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+    } catch (error) {
+        console.error('Logout error:', error);
+    } finally {
+        // Clear local storage
+        removeAuthToken();
+        removeUserInfo();
+        
+        // Update UI
+        updateUIForLoggedOutUser();
+        
+        hideLoadingSpinner();
+        
+        // Redirect to home if on protected page
+        const currentPage = window.location.pathname;
+        if (currentPage.includes('dashboard') || currentPage.includes('audit')) {
+            window.location.href = 'index.html';
+        }
+        
+        showNotification('Logged out successfully', 'info');
+    }
+}
+
+// ============= UI UPDATES =============
+
+function updateUIForLoggedInUser() {
+    const userInfo = getUserInfo();
+    
+    if (!userInfo) return;
+    
+    // Update user name displays
+    const userNameElements = document.querySelectorAll('#user-name');
+    userNameElements.forEach(el => {
+        el.textContent = userInfo.name;
+    });
+    
+    // Show/hide sections
+    document.getElementById('login-section')?.setAttribute('style', 'display: none;');
+    document.getElementById('user-info')?.setAttribute('style', 'display: flex;');
+    
+    // Hide auth warning
+    document.getElementById('auth-warning')?.setAttribute('style', 'display: none;');
+    
+    // Show main sections
+    document.getElementById('search-section')?.setAttribute('style', 'display: block;');
+    document.getElementById('translation-section')?.setAttribute('style', 'display: block;');
+    document.getElementById('fhir-section')?.setAttribute('style', 'display: block;');
+    
+    // Show/hide navigation based on role
+    if (userInfo.role === 'admin' || userInfo.role === 'researcher') {
+        const dashboardLinks = document.querySelectorAll('#dashboard-link, #dashboard-link-dash');
+        dashboardLinks.forEach(link => link.style.display = 'inline-block');
+    }
+    
+    if (userInfo.role === 'admin' || userInfo.role === 'auditor') {
+        const auditLinks = document.querySelectorAll('#audit-link, #audit-link-dash');
+        auditLinks.forEach(link => link.style.display = 'inline-block');
+    }
+}
+
+function updateUIForLoggedOutUser() {
+    // Show/hide sections
+    document.getElementById('login-section')?.setAttribute('style', 'display: block;');
+    document.getElementById('user-info')?.setAttribute('style', 'display: none;');
+    
+    // Show auth warning
+    document.getElementById('auth-warning')?.setAttribute('style', 'display: block;');
+    
+    // Hide main sections
+    document.getElementById('search-section')?.setAttribute('style', 'display: none;');
+    document.getElementById('translation-section')?.setAttribute('style', 'display: none;');
+    document.getElementById('fhir-section')?.setAttribute('style', 'display: none;');
+    
+    // Hide navigation links
+    const dashboardLinks = document.querySelectorAll('#dashboard-link, #dashboard-link-dash');
+    dashboardLinks.forEach(link => link.style.display = 'none');
+    
+    const auditLinks = document.querySelectorAll('#audit-link, #audit-link-dash');
+    auditLinks.forEach(link => link.style.display = 'none');
+}
+
+// ============= CHECK AUTH STATUS =============
+
+function checkAuthStatus() {
+    const token = getAuthToken();
+    const userInfo = getUserInfo();
+    
+    if (token && userInfo) {
+        updateUIForLoggedInUser();
+        return true;
+    } else {
+        updateUIForLoggedOutUser();
+        return false;
+    }
+}
+
+// ============= PROTECTED PAGE CHECK =============
+
+function requireAuth() {
+    const isAuthenticated = checkAuthStatus();
+    
+    // Check if on protected page
+    const currentPage = window.location.pathname;
+    if ((currentPage.includes('dashboard') || currentPage.includes('audit')) && !isAuthenticated) {
+        window.location.href = 'index.html';
+        return false;
+    }
+    
+    return isAuthenticated;
+}
+
+// ============= ROLE-BASED ACCESS =============
+
+function hasPermission(requiredRole) {
+    const userInfo = getUserInfo();
+    if (!userInfo) return false;
+    
+    const roleHierarchy = {
+        'admin': 4,
+        'auditor': 3,
+        'researcher': 2,
+        'practitioner': 1
+    };
+    
+    const userLevel = roleHierarchy[userInfo.role] || 0;
+    const requiredLevel = roleHierarchy[requiredRole] || 0;
+    
+    return userLevel >= requiredLevel;
+}
+
+// ============= API CALL WRAPPER =============
+
+async function authenticatedFetch(url, options = {}) {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(url, {
+        ...options,
+        headers: {
+            ...headers,
+            ...options.headers
+        }
+    });
+    
+    // Handle 401 - token expired
+    if (response.status === 401) {
+        removeAuthToken();
+        removeUserInfo();
+        showNotification('Session expired. Please login again.', 'warning');
+        window.location.href = 'index.html';
+        throw new Error('Authentication required');
+    }
+    
+    return response;
+}
+
+// ============= UTILITY FUNCTIONS =============
+
+function showLoadingSpinner() {
+    const spinner = document.getElementById('loading-spinner');
+    if (spinner) spinner.style.display = 'flex';
+}
+
+function hideLoadingSpinner() {
+    const spinner = document.getElementById('loading-spinner');
+    if (spinner) spinner.style.display = 'none';
+}
+
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type}`;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10000;
+        min-width: 300px;
+        animation: slideIn 0.3s;
+    `;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        notification.style.animation = 'fadeOut 0.3s';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+// ============= INITIALIZATION =============
+
+// Check auth status on page load
+document.addEventListener('DOMContentLoaded', () => {
+    checkAuthStatus();
+});
+
+// Auto-refresh token every 50 minutes
+setInterval(async () => {
+    const token = getAuthToken();
+    if (token) {
+        try {
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/auth/refresh`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setAuthToken(data.access_token);
+                console.log('Token refreshed');
+            }
+        } catch (error) {
+            console.error('Token refresh failed:', error);
+        }
+    }
+}, 50 * 60 * 1000); // 50 minutes
+
+document.addEventListener('DOMContentLoaded', () => {
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
+});
+
+// dashboard.js
+
+/**
+ * Dashboard Logic for AYUSH Terminology Bridge
+ * Handles: Analytics, Charts, Statistics Display
+ */
+
+const API_BASE_URL = 'http://localhost:8000';
+
+let usageChart = null;
+let successChart = null;
+
+// ============= INITIALIZATION =============
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // Check authentication and permissions
+    if (!requireAuth()) {
+        return;
+    }
+    
+    const userInfo = getUserInfo();
+    if (!hasPermission('researcher')) {
+        showNotification('You do not have permission to view this page', 'error');
+        setTimeout(() => window.location.href = 'index.html', 2000);
+        return;
+    }
+    
+    // Load all dashboard data
+    await loadDashboardData();
+});
+
+// ============= LOAD DASHBOARD DATA =============
+
+async function loadDashboardData() {
+    showLoadingSpinner();
+    
+    try {
+        await Promise.all([
+            loadStatistics(),
+            loadPopularSearches(),
+            loadPopularCodes(),
+            loadRecentActivity(),
+            loadTranslationStats()
+        ]);
+        
+        // Initialize charts after data loads
+        initializeCharts();
+    } catch (error) {
+        console.error('Dashboard load error:', error);
+        showNotification('Failed to load dashboard data', 'error');
+    } finally {
+        hideLoadingSpinner();
+    }
+}
+
+async function refreshDashboard() {
+    showNotification('Refreshing dashboard...', 'info');
+    await loadDashboardData();
+    showNotification('Dashboard refreshed!', 'success');
+}
+
+// ============= LOAD STATISTICS =============
+
+async function loadStatistics() {
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/analytics/dashboard-stats`);
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Update stat cards
+            document.getElementById('total-searches').textContent = formatNumber(data.total_searches || 0);
+            document.getElementById('total-translations').textContent = formatNumber(data.total_translations || 0);
+            document.getElementById('total-users').textContent = formatNumber(data.total_users || 0);
+            
+            // Calculate average response time
+            const avgTime = data.translation_stats?.average_response_time || 0;
+            document.getElementById('avg-response-time').textContent = `${avgTime.toFixed(0)}ms`;
+        }
+    } catch (error) {
+        console.error('Stats load error:', error);
+    }
+}
+
+// ============= LOAD POPULAR SEARCHES =============
+
+async function loadPopularSearches() {
+    const container = document.getElementById('popular-searches');
+    
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/analytics/popular-searches?limit=10`);
+        const data = await response.json();
+        
+        if (response.ok && data.popular_searches.length > 0) {
+            let html = '';
+            data.popular_searches.forEach((item, index) => {
+                html += `
+                    <div class="list-item">
+                        <div>
+                            <div class="list-item-title">${index + 1}. ${item.query}</div>
+                            <div class="list-item-meta">Last searched: ${formatDate(item.last_searched)}</div>
+                        </div>
+                        <span class="list-item-count">${item.count}</span>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="no-data"><p>No search data available</p></div>';
+        }
+    } catch (error) {
+        console.error('Popular searches load error:', error);
+        container.innerHTML = '<div class="alert alert-error">Failed to load data</div>';
+    }
+}
+
+// ============= LOAD POPULAR CODES =============
+
+async function loadPopularCodes() {
+    const container = document.getElementById('popular-codes');
+    
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/analytics/dashboard-stats`);
+        const data = await response.json();
+        
+        if (response.ok && data.popular_codes && data.popular_codes.length > 0) {
+            let html = '';
+            data.popular_codes.forEach((item, index) => {
+                html += `
+                    <div class="list-item">
+                        <div>
+                            <div class="list-item-title">${item.code}</div>
+                            <div class="list-item-meta">${item.display || 'NAMASTE Code'}</div>
+                        </div>
+                        <span class="list-item-count">${item.count}</span>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="no-data"><p>No translation data available</p></div>';
+        }
+    } catch (error) {
+        console.error('Popular codes load error:', error);
+        container.innerHTML = '<div class="alert alert-error">Failed to load data</div>';
+    }
+}
+
+// ============= LOAD RECENT ACTIVITY =============
+
+async function loadRecentActivity() {
+    const container = document.getElementById('recent-activity');
+    
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/analytics/dashboard-stats`);
+        const data = await response.json();
+        
+        if (response.ok && data.recent_activity && data.recent_activity.length > 0) {
+            let html = '';
+            data.recent_activity.forEach(activity => {
+                const icon = getActivityIcon(activity.action_type);
+                const iconClass = getActivityIconClass(activity.action_type);
+                
+                html += `
+                    <div class="activity-item">
+                        <div class="activity-icon ${iconClass}">${icon}</div>
+                        <div class="activity-content">
+                            <div class="activity-title">${formatActivityTitle(activity)}</div>
+                            <div class="activity-meta">
+                                ${activity.user_id || 'Unknown User'} • ${activity.endpoint || 'N/A'}
+                            </div>
+                        </div>
+                        <div class="activity-time">${formatRelativeTime(activity.timestamp)}</div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="no-data"><p>No recent activity</p></div>';
+        }
+    } catch (error) {
+        console.error('Recent activity load error:', error);
+        container.innerHTML = '<div class="alert alert-error">Failed to load data</div>';
+    }
+}
+
+// ============= LOAD TRANSLATION STATS =============
+
+async function loadTranslationStats() {
+    const container = document.getElementById('translation-stats');
+    
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/analytics/translation-stats`);
+        const data = await response.json();
+        
+        if (response.ok) {
+            let html = '';
+            
+            const stats = [
+                { label: 'Total Translations', value: data.total_translations || 0 },
+                { label: 'Successful', value: data.successful_translations || 0 },
+                { label: 'Failed', value: data.failed_translations || 0 },
+                { label: 'Avg Confidence', value: `${((data.average_confidence || 0) * 100).toFixed(1)}%` },
+                { label: 'Avg Response Time', value: `${(data.average_response_time || 0).toFixed(0)}ms` },
+                { label: 'Unique Codes Translated', value: data.unique_codes_translated || 0 }
+            ];
+            
+            stats.forEach(stat => {
+                html += `
+                    <div class="stat-detail-item">
+                        <div class="stat-detail-label">${stat.label}</div>
+                        <div class="stat-detail-value">${stat.value}</div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+    } catch (error) {
+        console.error('Translation stats load error:', error);
+        container.innerHTML = '<div class="alert alert-error">Failed to load data</div>';
+    }
+}
+
+// ============= INITIALIZE CHARTS =============
+
+function initializeCharts() {
+    initializeUsageChart();
+    initializeSuccessChart();
+}
+
+function initializeUsageChart() {
+    const ctx = document.getElementById('usage-chart');
+    if (!ctx) return;
+    
+    // Destroy existing chart
+    if (usageChart) {
+        usageChart.destroy();
+    }
+    
+    // Generate mock data for last 7 days
+    const labels = getLast7Days();
+    const searchData = generateMockData(7, 10, 50);
+    const translationData = generateMockData(7, 5, 30);
+    
+    usageChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Searches',
+                    data: searchData,
+                    borderColor: 'rgb(37, 99, 235)',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    tension: 0.4
+                },
+                {
+                    label: 'Translations',
+                    data: translationData,
+                    borderColor: 'rgb(22, 163, 74)',
+                    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                    tension: 0.4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function initializeSuccessChart() {
+    const ctx = document.getElementById('success-chart');
+    if (!ctx) return;
+    
+    // Destroy existing chart
+    if (successChart) {
+        successChart.destroy();
+    }
+    
+    successChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Successful', 'Failed', 'Partial'],
+            datasets: [{
+                data: [85, 10, 5],
+                backgroundColor: [
+                    'rgb(22, 163, 74)',
+                    'rgb(220, 38, 38)',
+                    'rgb(245, 158, 11)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+// ============= UTILITY FUNCTIONS =============
+
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return 'N/A';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-IN', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+    });
+}
+
+function formatRelativeTime(timestamp) {
+    if (!timestamp) return 'N/A';
+    
+    const now = new Date();
+    const date = new Date(timestamp);
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return formatDate(timestamp);
+}
+
+function getActivityIcon(actionType) {
+    if (actionType.includes('SEARCH')) return '🔍';
+    if (actionType.includes('TRANSLATE')) return '🔄';
+    if (actionType.includes('FHIR')) return '📋';
+    if (actionType.includes('LOGIN')) return '🔐';
+    if (actionType.includes('LOGOUT')) return '🚪';
+    return '📊';
+}
+
+function getActivityIconClass(actionType) {
+    if (actionType.includes('SEARCH')) return 'search';
+    if (actionType.includes('TRANSLATE')) return 'translate';
+    if (actionType.includes('FHIR')) return 'fhir';
+    if (actionType.includes('LOGIN')) return 'login';
+    return '';
+}
+
+function formatActivityTitle(activity) {
+    const action = activity.action_type;
+    if (action.includes('SEARCH')) return 'Search performed';
+    if (action.includes('TRANSLATE')) return 'Code translated';
+    if (action.includes('FHIR')) return 'FHIR resource created';
+    if (action.includes('LOGIN')) return 'User logged in';
+    if (action.includes('LOGOUT')) return 'User logged out';
+    return action.replace(/_/g, ' ');
+}
+
+function getLast7Days() {
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        days.push(date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }));
+    }
+    return days;
+}
+
+function generateMockData(count, min, max) {
+    const data = [];
+    for (let i = 0; i < count; i++) {
+        data.push(Math.floor(Math.random() * (max - min + 1)) + min);
+    }
+    return data;
+}
+
+// audit.html
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Logs - AYUSH Terminology Bridge</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo-section">
+                    <img src="assets/logo.png" alt="AYUSH Logo" class="logo">
+                    <h1>AYUSH Terminology Bridge</h1>
+                </div>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link">Search & Translate</a>
+                    <a href="dashboard.html" class="nav-link">Dashboard</a>
+                    <a href="audit.html" class="nav-link active">Audit Logs</a>
+                </nav>
+                <div class="user-section">
+                    <span id="user-name" class="user-name"></span>
+                    <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <div class="audit-header">
+                <h1>🔍 Audit Logs</h1>
+                <p class="subtitle">Complete audit trail of all system activities</p>
+            </div>
+
+            <!-- Filters -->
+            <div class="card">
+                <h2>Filters</h2>
+                <div class="filters-grid">
+                    <div class="form-group">
+                        <label>User ID</label>
+                        <input type="text" id="filter-user" class="form-input" placeholder="Filter by user">
+                    </div>
+                    <div class="form-group">
+                        <label>Action Type</label>
+                        <select id="filter-action" class="form-input">
+                            <option value="">All Actions</option>
+                            <option value="LOGIN">Login</option>
+                            <option value="LOGOUT">Logout</option>
+                            <option value="SEARCH">Search</option>
+                            <option value="TRANSLATE">Translation</option>
+                            <option value="FHIR">FHIR Resource</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Date From</label>
+                        <input type="date" id="filter-date-from" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Date To</label>
+                        <input type="date" id="filter-date-to" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Limit</label>
+                        <input type="number" id="filter-limit" class="form-input" value="50" min="10" max="500">
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Section -->
+            <div class="card">
+                <div class="export-section">
+                    <h3>Export Logs</h3>
+                    <div class="export-options">
+                        <button class="btn btn-secondary" onclick="exportToJSON()">
+                            📄 Export as JSON
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportToCSV()">
+                            📊 Export as CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Table -->
+            <div class="card">
+                <div class="table-header">
+                    <h2>Audit Trail</h2>
+                    <button class="btn btn-primary" onclick="refreshLogs()">
+                        🔄 Refresh
+                    </button>
+                </div>
+                
+                <div id="logs-loading" class="loading" style="display: none;">
+                    <div class="spinner-circle"></div>
+                    <p>Loading audit logs...</p>
+                </div>
+
+                <div id="logs-container">
+                    <div class="table-responsive">
+                        <table class="audit-table" id="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>User ID</th>
+                                    <th>Role</th>
+                                    <th>Action</th>
+                                    <th>Endpoint</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                    <th>Response Time</th>
+                                    <th>IP Address</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body">
+                                <!-- Logs will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="no-logs" class="no-data" style="display: none;">
+                        <p>No audit logs found matching the filters</p>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination" id="pagination">
+                    <button class="btn btn-secondary" onclick="previousPage()" id="prev-btn" disabled>
+                        ← Previous
+                    </button>
+                    <span id="page-info">Page 1</span>
+                    <button class="btn btn-secondary" onclick="nextPage()" id="next-btn">
+                        Next →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Log Details Modal -->
+            <div id="log-details-modal" class="modal">
+                <div class="modal-content modal-large">
+                    <span class="modal-close" onclick="closeLogDetailsModal()">&times;</span>
+                    <h2>Audit Log Details</h2>
+                    <div id="log-details-content" class="log-details">
+                        <!-- Details will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Activity Summary -->
+            <div class="card" id="user-activity-summary" style="display: none;">
+                <h2>👤 User Activity Summary</h2>
+                <div id="user-summary-content">
+                    <!-- Summary will be populated here -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 Ministry of AYUSH, Government of India</p>
+            <p>AYUSH Terminology Bridge v2.0</p>
+        </div>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script src="js/audit.js"></script>
+</body>
+</html>
+
+// dashboard.html
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard - AYUSH Terminology Bridge</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo-section">
+                    <img src="assets/logo.png" alt="AYUSH Logo" class="logo">
+                    <h1>AYUSH Terminology Bridge</h1>
+                </div>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link">Search & Translate</a>
+                    <a href="dashboard.html" class="nav-link active">Dashboard</a>
+                    <a href="audit.html" class="nav-link" id="audit-link-dash">Audit Logs</a>
+                </nav>
+                <div class="user-section">
+                    <span id="user-name" class="user-name"></span>
+                    <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <div class="dashboard-header">
+                <h1>📊 Analytics Dashboard</h1>
+                <p class="subtitle">Real-time insights into system usage and performance</p>
+                <button class="btn btn-primary" onclick="refreshDashboard()">
+                    <span>🔄</span> Refresh Data
+                </button>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">🔍</div>
+                    <div class="stat-content">
+                        <h3 id="total-searches">---</h3>
+                        <p>Total Searches</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🔄</div>
+                    <div class="stat-content">
+                        <h3 id="total-translations">---</h3>
+                        <p>Total Translations</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-content">
+                        <h3 id="total-users">---</h3>
+                        <p>Active Users</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚡</div>
+                    <div class="stat-content">
+                        <h3 id="avg-response-time">---</h3>
+                        <p>Avg Response Time</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-grid">
+                <!-- Usage Trends -->
+                <div class="card chart-card">
+                    <h2>📈 Usage Trends (Last 7 Days)</h2>
+                    <canvas id="usage-chart"></canvas>
+                </div>
+
+                <!-- Popular Searches -->
+                <div class="card">
+                    <h2>🔥 Popular Searches</h2>
+                    <div id="popular-searches" class="list-container">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Popular Codes -->
+                <div class="card">
+                    <h2>📋 Most Translated Codes</h2>
+                    <div id="popular-codes" class="list-container">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Translation Success Rate -->
+                <div class="card chart-card">
+                    <h2>✅ Translation Success Rate</h2>
+                    <canvas id="success-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="card">
+                <h2>⏱️ Recent Activity</h2>
+                <div id="recent-activity" class="activity-container">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Translation Statistics -->
+            <div class="card">
+                <h2>📊 Translation Statistics</h2>
+                <div id="translation-stats" class="stats-details">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 Ministry of AYUSH, Government of India</p>
+            <p>AYUSH Terminology Bridge v2.0</p>
+        </div>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
+
+// index.html
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AYUSH Terminology Bridge - NAMASTE to ICD-11</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo-section">
+                    <img src="assets/logo.png" alt="AYUSH Logo" class="logo">
+                    <h1>AYUSH Terminology Bridge</h1>
+                </div>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link active">Search & Translate</a>
+                    <a href="dashboard.html" class="nav-link" id="dashboard-link" style="display: none;">Dashboard</a>
+                    <a href="audit.html" class="nav-link" id="audit-link" style="display: none;">Audit Logs</a>
+                </nav>
+                <div class="user-section">
+                    <div id="login-section">
+                        <button class="btn btn-primary" onclick="showLoginModal()">Login</button>
+                    </div>
+                    <div id="user-info" style="display: none;">
+                        <span id="user-name" class="user-name"></span>
+                        <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="container">
+            <div id="auth-warning" class="alert alert-warning">
+                <strong>⚠️ Authentication Required</strong>
+                <p>Please login to access AYUSH Terminology Bridge services</p>
+            </div>
+
+            <section class="search-section" id="search-section" style="display: none;">
+                <div class="card">
+                    <h2>🔍 Search NAMASTE Codes</h2>
+                    <p class="subtitle">Search for traditional medicine conditions using NAMASTE terminology</p>
+                    
+                    <div class="search-box">
+                        <input 
+                            type="text" 
+                            id="search-input" 
+                            class="form-input" 
+                            placeholder="Search for condition (e.g., diabetes, fever, arthritis)"
+                            onkeypress="handleSearchKeypress(event)"
+                        >
+                        <div class="search-options">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="use-ml-search" checked>
+                                <span>Enable ML Semantic Matching</span>
+                            </label>
+                            <input type="number" id="search-limit" class="form-input-small" value="10" min="1" max="50">
+                            <span>results</span>
+                        </div>
+                        <button class="btn btn-primary btn-large" onclick="searchCodes()">Search</button>
+                    </div>
+
+                    <div id="search-results" class="results-container"></div>
+                </div>
+            </section>
+
+            <section class="translation-section" id="translation-section" style="display: none;">
+                <div class="card">
+                    <h2>🔄 Translate NAMASTE to ICD-11</h2>
+                    <p class="subtitle">Get ICD-11 equivalents (Traditional Medicine 2 + Biomedicine)</p>
+                    
+                    <div class="translation-box">
+                        <input 
+                            type="text" 
+                            id="translate-input" 
+                            class="form-input" 
+                            placeholder="Enter NAMASTE code (e.g., NAM0004)"
+                        >
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="use-ml-translate" checked>
+                            <span>Enable ML-Enhanced Matching</span>
+                        </label>
+                        <button class="btn btn-primary btn-large" onclick="translateCode()">Translate</button>
+                    </div>
+
+                    <div id="translation-results" class="results-container"></div>
+                </div>
+            </section>
+
+            <section class="fhir-section" id="fhir-section" style="display: none;">
+                <div class="card">
+                    <h2>📋 Generate FHIR Condition Resource</h2>
+                    <p class="subtitle">Create FHIR R4 Condition with dual coding (NAMASTE + ICD-11)</p>
+                    
+                    <div class="fhir-form">
+                        <div class="form-group">
+                            <label>NAMASTE Code</label>
+                            <input type="text" id="fhir-namaste-code" class="form-input" placeholder="NAM0004">
+                        </div>
+                        <div class="form-group">
+                            <label>ICD-11 Codes (comma-separated)</label>
+                            <input type="text" id="fhir-icd-codes" class="form-input" placeholder="TM2.7, 5A00">
+                        </div>
+                        <div class="form-group">
+                            <label>Patient ID</label>
+                            <input type="text" id="fhir-patient-id" class="form-input" placeholder="PATIENT-001">
+                        </div>
+                        <div class="form-group">
+                            <label>ABHA ID (optional)</label>
+                            <input type="text" id="fhir-abha-id" class="form-input" placeholder="12-3456-7890-1234">
+                        </div>
+                        <button class="btn btn-primary btn-large" onclick="generateFHIR()">Generate FHIR Resource</button>
+                    </div>
+
+                    <div id="fhir-results" class="results-container"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeLoginModal()">&times;</span>
+            <h2>🔐 ABHA Login</h2>
+            <p class="subtitle">Login with your ABHA credentials</p>
+            
+            <form id="login-form">
+                <div class="form-group">
+                    <label>User ID</label>
+                    <input type="text" id="login-user-id" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="login-password" class="form-input" required>
+                </div>
+                
+                <div class="demo-credentials">
+                    <strong>Demo Credentials:</strong>
+                    <ul>
+                        <li><code>DR001</code> / <code>demo_password</code> (Practitioner)</li>
+                        <li><code>ADMIN001</code> / <code>admin_password</code> (Admin)</li>
+                        <li><code>RESEARCHER001</code> / <code>research_password</code> (Researcher)</li>
+                    </ul>
+                </div>
+                
+                <div id="login-error" class="alert alert-error" style="display: none;"></div>
+                
+                <button type="submit" class="btn btn-primary btn-large">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="loading-spinner" class="spinner" style="display: none;">
+        <div class="spinner-circle"></div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 Ministry of AYUSH, Government of India</p>
+            <p>AYUSH Terminology Bridge v2.0 | FHIR R4 Compliant | Powered by WHO ICD-11</p>
+        </div>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
+

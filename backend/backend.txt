@@ -1,0 +1,3489 @@
+// ml_matcher.py
+
+"""
+ML-Based Semantic Matching using BioBERT
+Provides advanced semantic similarity for NAMASTE-ICD11 mapping
+"""
+
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
+from typing import List, Dict, Tuple
+import pickle
+import os
+
+class SemanticMatcher:
+    def __init__(self, model_name: str = 'dmis-lab/biobert-base-cased-v1.2'):
+        """
+        Initialize BioBERT model for biomedical text similarity
+        Falls back to lighter model if BioBERT unavailable
+        """
+        try:
+            self.model = SentenceTransformer(model_name)
+            print(f"✅ Loaded BioBERT model: {model_name}")
+        except Exception as e:
+            print(f"⚠️ BioBERT unavailable, using fallback model: {e}")
+            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        
+        self.cache_dir = 'ml_models/embeddings_cache'
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.embeddings_cache = {}
+    
+    def encode_text(self, text: str) -> np.ndarray:
+        """Generate embedding for given text"""
+        # Check cache first
+        cache_key = hash(text)
+        if cache_key in self.embeddings_cache:
+            return self.embeddings_cache[cache_key]
+        
+        # Generate new embedding
+        embedding = self.model.encode(text, convert_to_tensor=True)
+        self.embeddings_cache[cache_key] = embedding
+        
+        return embedding
+    
+    def compute_similarity(self, text1: str, text2: str) -> float:
+        """Compute semantic similarity between two texts"""
+        emb1 = self.encode_text(text1)
+        emb2 = self.encode_text(text2)
+        
+        similarity = util.pytorch_cos_sim(emb1, emb2).item()
+        return round(similarity, 4)
+    
+    def find_best_matches(self, 
+                         query_text: str, 
+                         candidate_texts: List[Dict[str, str]], 
+                         top_k: int = 5) -> List[Dict]:
+        """
+        Find top-k most semantically similar texts
+        
+        Args:
+            query_text: NAMASTE disease description
+            candidate_texts: List of ICD-11 entries with 'code' and 'display'
+            top_k: Number of top matches to return
+        
+        Returns:
+            List of matches with similarity scores
+        """
+        query_embedding = self.encode_text(query_text)
+        
+        matches = []
+        for candidate in candidate_texts:
+            # Combine code display and description for better matching
+            candidate_text = f"{candidate.get('display', '')} {candidate.get('definition', '')}"
+            candidate_embedding = self.encode_text(candidate_text)
+            
+            similarity = util.pytorch_cos_sim(query_embedding, candidate_embedding).item()
+            
+            matches.append({
+                'code': candidate.get('code'),
+                'display': candidate.get('display'),
+                'similarity': round(similarity, 4),
+                'match_type': 'semantic'
+            })
+        
+        # Sort by similarity and return top-k
+        matches.sort(key=lambda x: x['similarity'], reverse=True)
+        return matches[:top_k]
+    
+    def hybrid_match(self, 
+                    namaste_term: Dict, 
+                    icd_candidates: List[Dict],
+                    fuzzy_score_weight: float = 0.4,
+                    semantic_score_weight: float = 0.6) -> List[Dict]:
+        """
+        Hybrid matching combining fuzzy and semantic approaches
+        
+        Args:
+            namaste_term: NAMASTE entry with display, synonyms, description
+            icd_candidates: ICD-11 candidate entries with scores
+            fuzzy_score_weight: Weight for fuzzy matching (0-1)
+            semantic_score_weight: Weight for semantic matching (0-1)
+        
+        Returns:
+            Re-ranked candidates with hybrid scores
+        """
+        # Build comprehensive query text
+        query_text = f"{namaste_term['display']} {namaste_term['description']}"
+        if namaste_term.get('synonyms'):
+            query_text += " " + " ".join(namaste_term['synonyms'])
+        
+        query_embedding = self.encode_text(query_text)
+        
+        enhanced_candidates = []
+        for candidate in icd_candidates:
+            # Get fuzzy score (if already computed)
+            fuzzy_score = candidate.get('confidence', 0.5)
+            
+            # Compute semantic score
+            candidate_text = f"{candidate.get('display', '')} {candidate.get('definition', '')}"
+            candidate_embedding = self.encode_text(candidate_text)
+            semantic_score = util.pytorch_cos_sim(query_embedding, candidate_embedding).item()
+            
+            # Hybrid score
+            hybrid_score = (fuzzy_score * fuzzy_score_weight + 
+                          semantic_score * semantic_score_weight)
+            
+            enhanced_candidates.append({
+                **candidate,
+                'fuzzy_score': round(fuzzy_score, 4),
+                'semantic_score': round(semantic_score, 4),
+                'hybrid_score': round(hybrid_score, 4),
+                'confidence': round(hybrid_score, 4),  # Update confidence
+                'match_method': 'hybrid'
+            })
+        
+        # Sort by hybrid score
+        enhanced_candidates.sort(key=lambda x: x['hybrid_score'], reverse=True)
+        return enhanced_candidates
+    
+    def save_cache(self, filepath: str = None):
+        """Save embeddings cache to disk"""
+        if filepath is None:
+            filepath = os.path.join(self.cache_dir, 'embeddings_cache.pkl')
+        
+        with open(filepath, 'wb') as f:
+            pickle.dump(self.embeddings_cache, f)
+        print(f"💾 Saved embeddings cache to {filepath}")
+    
+    def load_cache(self, filepath: str = None):
+        """Load embeddings cache from disk"""
+        if filepath is None:
+            filepath = os.path.join(self.cache_dir, 'embeddings_cache.pkl')
+        
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                self.embeddings_cache = pickle.load(f)
+            print(f"📂 Loaded embeddings cache from {filepath}")
+        else:
+            print("ℹ️ No cache file found, starting fresh")
+
+
+# Example usage
+if __name__ == "__main__":
+    matcher = SemanticMatcher()
+    
+    # Test similarity
+    text1 = "Diabetes mellitus with high blood sugar"
+    text2 = "Prameha - sweet urine disease with excess urination"
+    
+    similarity = matcher.compute_similarity(text1, text2)
+    print(f"Similarity: {similarity}")
+    
+    # Test matching
+    query = "Fever with intermittent pattern similar to malaria"
+    candidates = [
+        {"code": "1F40", "display": "Malaria", "definition": "Parasitic infection"},
+        {"code": "MG26", "display": "Fever unspecified", "definition": "Body temperature elevation"},
+        {"code": "1F41", "display": "Dengue fever", "definition": "Viral fever"}
+    ]
+    
+    matches = matcher.find_best_matches(query, candidates, top_k=3)
+    for match in matches:
+        print(f"{match['code']}: {match['display']} - Similarity: {match['similarity']}")
+
+// mapping_engine.py
+
+import json
+from typing import List, Dict, Tuple
+from difflib import SequenceMatcher
+
+class MappingEngine:
+    def __init__(self, mappings_path: str, icd_client, namaste_parser):
+        with open(mappings_path, 'r') as f:
+            loaded_json = json.load(f)
+            self.predefined_mappings = loaded_json.get('mappings', [])
+        
+        self.icd_client = icd_client
+        self.namaste_parser = namaste_parser 
+    
+    def get_predefined_mapping(self, namaste_code: str) -> Dict:
+        """Check if pre-mapped exists"""
+        for mapping in self.predefined_mappings:
+            if mapping.get('namaste_code') == namaste_code:
+                return mapping
+        return None
+    
+    def translate_namaste_to_icd(self, namaste_code: str) -> Dict:
+        """
+        Main translation function.
+        CHANGED: This function now ONLY uses the predefined mappings from concept_mappings.json.
+        The fuzzy matching and external API calls have been removed as requested.
+        """
+        # Get NAMASTE code details
+        namaste_data = self.namaste_parser.get_code_by_id(namaste_code)
+        if not namaste_data:
+            return {'error': 'NAMASTE code not found'} 
+        
+        # Check predefined mapping
+        predefined = self.get_predefined_mapping(namaste_code)
+        
+        if predefined:
+            # FIXED: Correctly reads 'icd11_mms' from your JSON file.
+            # The frontend expects 'icd11_biomedicine_matches', so we rename the key here for consistency.
+            tm2_matches = predefined.get('icd11_tm2', [])
+            biomedicine_matches = predefined.get('icd11_mms', [])
+
+            # To maintain compatibility with the frontend, let's rename the keys in the final output.
+            # We also need to add 'title' to match what the old API call provided.
+            for match in tm2_matches:
+                match['title'] = match.get('display')
+            for match in biomedicine_matches:
+                match['title'] = match.get('display')
+
+            return {
+                'namaste': namaste_data,
+                'icd11_tm2_matches': tm2_matches,
+                'icd11_biomedicine_matches': biomedicine_matches,
+                'mapping_source': 'predefined'
+            }
+        else:
+            # CHANGED: If no predefined mapping is found, return a clear message.
+            return {
+                'namaste': namaste_data,
+                'icd11_tm2_matches': [],
+                'icd11_biomedicine_matches': [],
+                'mapping_source': 'predefined',
+                'message': 'No predefined mapping found for this code.'
+            }
+
+// icd11_client.py
+
+import requests
+import json
+from datetime import datetime, timedelta
+from typing import List, Dict
+
+class ICD11Client:
+    def __init__(self, credentials_path: str):
+        with open(credentials_path, 'r') as f:
+            self.config = json.load(f)
+        
+        self.access_token = None
+        self.token_expiry = None
+    
+    def get_access_token(self) -> str:
+        """Get OAuth2 access token"""
+        if self.access_token and self.token_expiry > datetime.now():
+            return self.access_token
+        
+        # Request new token
+        payload = {
+            'client_id': self.config['client_id'],
+            'client_secret': self.config['client_secret'],
+            'scope': 'icdapi_access',
+            'grant_type': 'client_credentials'
+        }
+        
+        response = requests.post(
+            self.config['token_endpoint'],
+            data=payload,
+            verify=True,
+            timeout=60  # ADD THIS LINE: Timeout in seconds
+        )
+        
+        if response.status_code == 200:
+            token_data = response.json()
+            self.access_token = token_data['access_token']
+            # Token expires in ~3600 seconds
+            self.token_expiry = datetime.now() + timedelta(seconds=3500)
+            return self.access_token
+        else:
+            raise Exception(f"Failed to get token: {response.text}")
+    
+    def search_icd11(self, query: str, use_flexisearch: bool = True) -> List[Dict]:
+        """Search ICD-11 codes using API"""
+        token = self.get_access_token()
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json',
+            'Accept-Language': 'en',
+            'API-Version': 'v2'
+        }
+        
+        # Use flexisearch for better matching
+        search_type = 'flexisearch' if use_flexisearch else 'search'
+        url = f"{self.config['api_base_url']}/mms/{search_type}"
+        
+        params = {
+            'q': query,
+            'useFlexisearch': use_flexisearch,
+            'flatResults': True
+        }
+        
+        response = requests.get(url, headers=headers, 
+            params=params,
+            timeout=15  # ADD THIS LINE: Timeout in seconds
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('destinationEntities', [])
+        else:
+            return []
+    
+    def get_entity_details(self, entity_uri: str) -> Dict:
+        """Get detailed information about an ICD-11 entity"""
+        token = self.get_access_token()
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json',
+            'Accept-Language': 'en',
+            'API-Version': 'v2'
+        }
+        
+        response = requests.get(entity_uri, headers=headers)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+
+
+// fhir_generator.py
+
+from datetime import datetime
+import uuid
+from typing import List, Dict
+
+class FHIRGenerator:
+    def __init__(self):
+        self.base_url = "http://terminology.ayush.gov.in"
+    
+    def generate_codesystem(self, namaste_codes: List[Dict]) -> Dict:
+        """Generate FHIR CodeSystem for NAMASTE"""
+        concepts = []
+        for code in namaste_codes:
+            # Use .get() for safer access
+            concept = {
+                'code': code.get('code'),
+                'display': code.get('display'),
+                'definition': code.get('description'),
+                'designation': [
+                    {
+                        'language': 'sa',
+                        'value': code.get('sanskrit')
+                    }
+                ],
+                'property': [
+                    {'code': 'system', 'valueString': code.get('system')},
+                    {'code': 'category', 'valueString': code.get('category')}
+                ]
+            }
+            concepts.append(concept)
+        
+        codesystem = {
+            'resourceType': 'CodeSystem',
+            'id': 'namaste-ayush-codes',
+            'url': f'{self.base_url}/CodeSystem/namaste',
+            'version': '1.0.0',
+            'name': 'NAMASTE_AYUSH_Codes',
+            'title': 'National AYUSH Morbidity and Standardized Terminologies',
+            'status': 'active',
+            'date': datetime.now().isoformat(),
+            'publisher': 'Ministry of AYUSH, Government of India',
+            'description': 'Standardized terminology codes for AYUSH systems',
+            'content': 'complete',
+            'count': len(concepts),
+            'concept': concepts
+        }
+        
+        return codesystem
+    
+    def generate_conceptmap(self, mappings: List[Dict]) -> Dict:
+        """Generate FHIR ConceptMap for NAMASTE ↔ ICD-11"""
+        elements = []
+        
+        for mapping in mappings:
+            targets = []
+            
+            # Add TM2 mapping
+            tm2_map = mapping.get('icd11_tm2')
+            if tm2_map: # Check if the key exists and is not empty/null
+                targets.append({
+                    'code': tm2_map.get('code'),
+                    'display': tm2_map.get('display'),
+                    'equivalence': 'equivalent',
+                    'comment': f"Confidence: {tm2_map.get('confidence')}"
+                })
+            
+            # Add biomedicine mapping
+            biomed_map = mapping.get('icd11_biomedicine')
+            if biomed_map:
+                targets.append({
+                    'code': biomed_map.get('code'),
+                    'display': biomed_map.get('display'),
+                    'equivalence': 'relatedto',
+                    'comment': f"Confidence: {biomed_map.get('confidence')}"
+                })
+            
+            elements.append({
+                'code': mapping.get('namaste_code'),
+                'display': mapping.get('namaste_term'), # Use .get() for safety
+                'target': targets
+            })
+        
+        conceptmap = {
+            'resourceType': 'ConceptMap',
+            'id': 'namaste-icd11-map',
+            'url': f'{self.base_url}/ConceptMap/namaste-icd11',
+            'version': '1.0.0',
+            'name': 'NAMASTE_ICD11_Mapping',
+            'title': 'NAMASTE to ICD-11 Concept Mapping',
+            'status': 'active',
+            'date': datetime.now().isoformat(),
+            'publisher': 'Ministry of AYUSH',
+            'sourceUri': f'{self.base_url}/CodeSystem/namaste',
+            'targetUri': 'http://id.who.int/icd/release/11/2024-01',
+            'group': [{
+                'source': f'{self.base_url}/CodeSystem/namaste',
+                'target': 'http://id.who.int/icd/release/11/2024-01',
+                'element': elements
+            }]
+        }
+        
+        return conceptmap
+    
+    # CHANGED: The entire function signature and body was corrected to match your API usage
+    def create_condition(self, namaste_code: str, namaste_display: str, icd_codes: List[str], patient_id: str, abha_id: str = None) -> Dict:
+        """Generate FHIR Condition resource (ProblemList entry)"""
+        condition_id = str(uuid.uuid4())
+        
+        # Start with the NAMASTE code
+        coding = [
+            {
+                'system': f'{self.base_url}/CodeSystem/namaste',
+                'code': namaste_code,
+                'display': namaste_display
+            }
+        ]
+        
+        # Add ICD-11 codes (which are strings from the request)
+        for icd_code_str in icd_codes:
+            coding.append({
+                'system': 'http://id.who.int/icd/release/11/mms', # Default to mms
+                'code': icd_code_str
+            })
+        
+        condition = {
+            'resourceType': 'Condition',
+            'id': condition_id,
+            'clinicalStatus': {
+                'coding': [{
+                    'system': 'http://terminology.hl7.org/CodeSystem/condition-clinical',
+                    'code': 'active'
+                }]
+            },
+            'verificationStatus': {
+                'coding': [{
+                    'system': 'http://terminology.hl7.org/CodeSystem/condition-ver-status',
+                    'code': 'confirmed'
+                }]
+            },
+            'category': [{
+                'coding': [{
+                    'system': 'http://terminology.hl7.org/CodeSystem/condition-category',
+                    'code': 'problem-list-item',
+                    'display': 'Problem List Item'
+                }]
+            }],
+            'code': {
+                'coding': coding,
+                'text': namaste_display
+            },
+            'subject': {
+                'reference': f'Patient/{patient_id}'
+            },
+            'recordedDate': datetime.now().isoformat()
+        }
+        
+        return condition
+
+// csv_parser.py
+
+import csv
+import json
+from typing import List, Dict
+
+class NAMASTEParser:
+    def __init__(self, csv_path: str):
+        self.csv_path = csv_path
+        self.codes = []
+    
+    def load_csv(self) -> List[Dict]:
+        """Load and parse NAMASTE CSV file"""
+        with open(self.csv_path, 'r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                # Parse synonyms (pipe-separated)
+                synonyms = row['Synonyms'].split('|') if row['Synonyms'] else []
+                
+                code_entry = {
+                    'code': row['Code'].strip(),
+                    'display': row['Disease_Name'].strip(),
+                    'system': row['System'].strip(),
+                    'category': row['Category'].strip(),
+                    'synonyms': [s.strip() for s in synonyms],
+                    'description': row['Description'].strip(),
+                    'sanskrit': row['Sanskrit_Term'].strip()
+                }
+                self.codes.append(code_entry)
+        
+        return self.codes
+    
+    def search_codes(self, query: str, limit: int = 10) -> List[Dict]:
+        """Fuzzy search in NAMASTE codes"""
+        from difflib import SequenceMatcher
+        
+        results = []
+        query_lower = query.lower()
+        
+        for code in self.codes:
+            # Search in display name
+            score1 = SequenceMatcher(None, query_lower, code['display'].lower()).ratio()
+            
+            # Search in synonyms
+            score2 = max([SequenceMatcher(None, query_lower, syn.lower()).ratio() 
+                         for syn in code['synonyms']] + [0])
+            
+            # Search in Sanskrit term
+            score3 = SequenceMatcher(None, query_lower, code['sanskrit'].lower()).ratio()
+            
+            max_score = max(score1, score2, score3)
+            
+            if max_score > 0.3:  # Threshold
+                results.append({
+                    **code,
+                    'match_score': round(max_score, 3)
+                })
+        
+        # Sort by score and limit
+        results.sort(key=lambda x: x['match_score'], reverse=True)
+        return results[:limit]
+    
+    def get_code_by_id(self, code_id: str) -> Dict:
+        """Get specific code by ID"""
+        for code in self.codes:
+            if code['code'] == code_id:
+                return code
+        return None
+
+// audit_service.py
+
+"""
+Audit Trail Service for AYUSH Terminology Bridge
+Compliant with India's 2016 EHR Standards (ISO 22600)
+"""
+
+import sqlite3
+from datetime import datetime
+import json
+import hashlib
+from typing import Dict, List, Optional
+import uuid
+
+class AuditService:
+    def __init__(self, db_path: str = 'data/audit_logs.db'):
+
+        """Initialize audit database"""
+        self.db_path = db_path
+        self.init_database()
+    
+    def init_database(self):
+        """Create audit tables if not exists"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Main audit log table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id TEXT PRIMARY KEY,
+                timestamp DATETIME NOT NULL,
+                user_id TEXT,
+                user_role TEXT,
+                action_type TEXT NOT NULL,
+                resource_type TEXT,
+                resource_id TEXT,
+                endpoint TEXT,
+                method TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                request_body TEXT,
+                response_status INTEGER,
+                response_time_ms FLOAT,
+                consent_status TEXT,
+                abha_id TEXT,
+                error_message TEXT,
+                metadata TEXT,
+                checksum TEXT NOT NULL
+            )
+        ''')
+        
+        # Search history table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS search_history (
+                id TEXT PRIMARY KEY,
+                timestamp DATETIME NOT NULL,
+                user_id TEXT,
+                search_query TEXT NOT NULL,
+                results_count INTEGER,
+                top_result_code TEXT,
+                session_id TEXT
+            )
+        ''')
+        
+        # Translation history table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS translation_history (
+                id TEXT PRIMARY KEY,
+                timestamp DATETIME NOT NULL,
+                user_id TEXT,
+                namaste_code TEXT NOT NULL,
+                icd11_tm2_code TEXT,
+                icd11_bio_code TEXT,
+                confidence_tm2 FLOAT,
+                confidence_bio FLOAT,
+                mapping_method TEXT,
+                accepted BOOLEAN
+            )
+        ''')
+        
+        # Analytics aggregation table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS analytics_summary (
+                date DATE PRIMARY KEY,
+                total_searches INTEGER DEFAULT 0,
+                total_translations INTEGER DEFAULT 0,
+                total_fhir_resources INTEGER DEFAULT 0,
+                unique_users INTEGER DEFAULT 0,
+                avg_response_time_ms FLOAT,
+                top_searched_terms TEXT
+            )
+        ''')
+
+        cursor.execute('''
+             CREATE TABLE IF NOT EXISTS fhir_resource_logs (
+                id TEXT PRIMARY KEY,
+                timestamp DATETIME NOT NULL,
+                user_id TEXT,
+                resource_type TEXT,
+                resource_id TEXT,
+                patient_id TEXT,
+                codes TEXT
+            )
+        ''')
+
+        conn.commit()
+        conn.close()
+        print("✅ Audit database initialized")
+    
+    def _generate_checksum(self, data: Dict) -> str:
+        """Generate SHA-256 checksum for audit integrity"""
+        data_str = json.dumps(data, sort_keys=True)
+        return hashlib.sha256(data_str.encode()).hexdigest()
+    
+    def log_fhir_resource(self, user_id: str, resource_type: str, resource_id: str, patient_id: str, codes: List[str]) -> str:
+        """Log FHIR resource creation"""
+        log_id = str(uuid.uuid4())
+        timestamp = datetime.now()
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO fhir_resource_logs (
+                id, timestamp, user_id, resource_type, resource_id, patient_id, codes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            log_id, timestamp, user_id, resource_type, resource_id,
+            patient_id, json.dumps(codes)
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return log_id
+    
+    def log_api_call(self, 
+                     action_type: str,
+                     user_id: Optional[str] = None,
+                     user_role: Optional[str] = None,
+                     endpoint: str = None,
+                     method: str = None,
+                     ip_address: str = None,
+                     user_agent: str = None,
+                     request_body: Dict = None,
+                     response_status: int = None,
+                     response_time_ms: float = None,
+                     resource_type: str = None,
+                     resource_id: str = None,
+                     consent_status: str = "granted",
+                     abha_id: str = None,
+                     error_message: str = None,
+                     metadata: Dict = None) -> str:
+        """
+        Log API call with full audit trail
+        
+        Args:
+            action_type: Type of action (SEARCH, TRANSLATE, CREATE_FHIR, etc.)
+            user_id: Authenticated user ID
+            user_role: User role (doctor, admin, etc.)
+            endpoint: API endpoint called
+            method: HTTP method (GET, POST, etc.)
+            ip_address: Client IP
+            user_agent: Browser/client info
+            request_body: Request payload
+            response_status: HTTP status code
+            response_time_ms: Response time in milliseconds
+            resource_type: FHIR resource type if applicable
+            resource_id: Resource ID if applicable
+            consent_status: Patient consent status
+            abha_id: ABHA ID if applicable
+            error_message: Error details if any
+            metadata: Additional metadata
+        
+        Returns:
+            audit_id: Unique audit log ID
+        """
+        audit_id = str(uuid.uuid4())
+        timestamp = datetime.now()
+        
+        # Prepare audit data
+        audit_data = {
+            'id': audit_id,
+            'timestamp': timestamp.isoformat(),
+            'user_id': user_id,
+            'action_type': action_type,
+            'endpoint': endpoint,
+            'method': method,
+            'response_status': response_status
+        }
+        
+        checksum = self._generate_checksum(audit_data)
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO audit_logs (
+                id, timestamp, user_id, user_role, action_type,
+                resource_type, resource_id, endpoint, method,
+                ip_address, user_agent, request_body, response_status,
+                response_time_ms, consent_status, abha_id,
+                error_message, metadata, checksum
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            audit_id, timestamp, user_id, user_role, action_type,
+            resource_type, resource_id, endpoint, method,
+            ip_address, user_agent, 
+            json.dumps(request_body) if request_body else None,
+            response_status, response_time_ms, consent_status, abha_id,
+            error_message,
+            json.dumps(metadata) if metadata else None,
+            checksum
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return audit_id
+    
+    def log_search(self, user_id: str, query: str, results_count: int, 
+                   top_result: str = None, session_id: str = None) -> str:
+        """Log search activity"""
+        search_id = str(uuid.uuid4())
+        timestamp = datetime.now()
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO search_history (
+                id, timestamp, user_id, search_query, 
+                results_count, top_result_code, session_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (search_id, timestamp, user_id, query, results_count, 
+              top_result, session_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return search_id
+    
+    def log_translation(self, user_id: str, namaste_code: str,
+                       icd11_tm2: str = None, icd11_bio: str = None,
+                       confidence_tm2: float = None, confidence_bio: float = None,
+                       mapping_method: str = "hybrid", accepted: bool = True) -> str:
+        """Log code translation activity"""
+        trans_id = str(uuid.uuid4())
+        timestamp = datetime.now()
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO translation_history (
+                id, timestamp, user_id, namaste_code,
+                icd11_tm2_code, icd11_bio_code,
+                confidence_tm2, confidence_bio,
+                mapping_method, accepted
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (trans_id, timestamp, user_id, namaste_code,
+              icd11_tm2, icd11_bio, confidence_tm2, confidence_bio,
+              mapping_method, accepted))
+        
+        conn.commit()
+        conn.close()
+        
+        return trans_id
+    
+    def get_audit_logs(self, 
+                      user_id: Optional[str] = None,
+                      action_type: Optional[str] = None,
+                      start_date: Optional[datetime] = None,
+                      end_date: Optional[datetime] = None,
+                      limit: int = 100) -> List[Dict]:
+        """Retrieve audit logs with filters"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM audit_logs WHERE 1=1"
+        params = []
+        
+        if user_id:
+            query += " AND user_id = ?"
+            params.append(user_id)
+        
+        if action_type:
+            query += " AND action_type = ?"
+            params.append(action_type)
+        
+        if start_date:
+            query += " AND timestamp >= ?"
+            params.append(start_date.isoformat())
+        
+        if end_date:
+            query += " AND timestamp <= ?"
+            params.append(end_date.isoformat())
+        
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        logs = []
+        for row in rows:
+            log = dict(row)
+            # Parse JSON fields
+            if log['request_body']:
+                log['request_body'] = json.loads(log['request_body'])
+            if log['metadata']:
+                log['metadata'] = json.loads(log['metadata'])
+            logs.append(log)
+        
+        conn.close()
+        return logs
+    
+    def get_search_history(self, user_id: Optional[str] = None, 
+                          limit: int = 50) -> List[Dict]:
+        """Get search history"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if user_id:
+            cursor.execute('''
+                SELECT * FROM search_history 
+                WHERE user_id = ? 
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (user_id, limit))
+        else:
+            cursor.execute('''
+                SELECT * FROM search_history 
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def get_translation_history(self, user_id: Optional[str] = None,
+                               limit: int = 50) -> List[Dict]:
+        """Get translation history"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if user_id:
+            cursor.execute('''
+                SELECT * FROM translation_history 
+                WHERE user_id = ? 
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (user_id, limit))
+        else:
+            cursor.execute('''
+                SELECT * FROM translation_history 
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def get_analytics_summary(self, start_date: datetime = None,
+                             end_date: datetime = None) -> Dict:
+        """Get analytics summary for dashboard"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Total searches
+        cursor.execute('SELECT COUNT(*) FROM search_history')
+        total_searches = cursor.fetchone()[0]
+        
+        # Total translations
+        cursor.execute('SELECT COUNT(*) FROM translation_history')
+        total_translations = cursor.fetchone()[0]
+        
+        # Total API calls
+        cursor.execute('SELECT COUNT(*) FROM audit_logs')
+        total_api_calls = cursor.fetchone()[0]
+        
+        # Unique users
+        cursor.execute('SELECT COUNT(DISTINCT user_id) FROM audit_logs WHERE user_id IS NOT NULL')
+        unique_users = cursor.fetchone()[0]
+        
+        # Average response time
+        cursor.execute('SELECT AVG(response_time_ms) FROM audit_logs WHERE response_time_ms IS NOT NULL')
+        avg_response_time = cursor.fetchone()[0] or 0
+        
+        # Top searched terms
+        cursor.execute('''
+            SELECT search_query, COUNT(*) as count 
+            FROM search_history 
+            GROUP BY search_query 
+            ORDER BY count DESC 
+            LIMIT 10
+        ''')
+        top_searches = [{'query': row[0], 'count': row[1]} for row in cursor.fetchall()]
+        
+        # Most translated codes
+        cursor.execute('''
+            SELECT namaste_code, COUNT(*) as count 
+            FROM translation_history 
+            GROUP BY namaste_code 
+            ORDER BY count DESC 
+            LIMIT 10
+        ''')
+        top_translations = [{'code': row[0], 'count': row[1]} for row in cursor.fetchall()]
+        
+        # Success rate
+        cursor.execute('''
+            SELECT 
+                COUNT(CASE WHEN response_status >= 200 AND response_status < 300 THEN 1 END) * 100.0 / COUNT(*) 
+            FROM audit_logs 
+            WHERE response_status IS NOT NULL
+        ''')
+        success_rate = cursor.fetchone()[0] or 0
+        
+        conn.close()
+        
+        return {
+            'total_searches': total_searches,
+            'total_translations': total_translations,
+            'total_api_calls': total_api_calls,
+            'unique_users': unique_users,
+            'avg_response_time_ms': round(avg_response_time, 2),
+            'success_rate': round(success_rate, 2),
+            'top_searches': top_searches,
+            'top_translations': top_translations
+        }
+    
+    def verify_audit_integrity(self, audit_id: str) -> bool:
+        """Verify audit log hasn't been tampered with"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM audit_logs WHERE id = ?', (audit_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return False
+        
+        log = dict(row)
+        stored_checksum = log.pop('checksum')
+        
+        # Recreate checksum from core data
+        core_data = {
+            'id': log['id'],
+            'timestamp': log['timestamp'],
+            'user_id': log['user_id'],
+            'action_type': log['action_type'],
+            'endpoint': log['endpoint'],
+            'method': log['method'],
+            'response_status': log['response_status']
+        }
+        
+        computed_checksum = self._generate_checksum(core_data)
+        
+        return computed_checksum == stored_checksum
+
+
+# Example usage
+if __name__ == "__main__":
+    audit = AuditService()
+    
+    # Log a search
+    audit.log_search(
+        user_id="DR001",
+        query="diabetes",
+        results_count=5,
+        top_result="NAM0004"
+    )
+    
+    # Log a translation
+    audit.log_translation(
+        user_id="DR001",
+        namaste_code="NAM0004",
+        icd11_tm2="TM2.7",
+        icd11_bio="5A00",
+        confidence_tm2=0.96,
+        confidence_bio=0.92,
+        mapping_method="hybrid"
+    )
+    
+    # Get analytics
+    summary = audit.get_analytics_summary()
+    print(json.dumps(summary, indent=2))
+
+// abha_auth.py
+
+"""
+ABHA (Ayushman Bharat Health Account) OAuth2 Authentication
+Simulated authentication for demo purposes - can be connected to real ABDM APIs
+"""
+
+import jwt
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+import json
+import os
+
+class ABHAAuthService:
+    def __init__(self, config_path: str = 'config/abha_config.json'):
+        """Initialize ABHA authentication service"""
+        self.config = {} # ADDED: Initialize config
+        self.load_config(config_path)
+        
+        # CHANGED: Use secret key from the loaded config file for consistency
+        self.secret_key = os.environ.get('JWT_SECRET_KEY', self.config.get('jwt_settings', {}).get('secret_key', 'your-secret-key-change-in-production'))
+        
+        # ADDED: Load users from the config file, not a hardcoded list
+        # This converts the list of users from JSON into a dictionary keyed by user_id
+        self.users_db = {user['user_id']: user for user in self.config.get('mock_users', [])}
+        if not self.users_db:
+             print("⚠️  Warning: No mock users found in abha_config.json")
+    
+    def load_config(self, config_path: str):
+        """Load ABHA configuration"""
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                self.config = json.load(f)
+        else:
+            # Default config for demo if file is missing
+            print(f"⚠️  Warning: {config_path} not found. Using default demo config.")
+            self.config = {
+                'jwt_settings': {
+                    'secret_key': 'your-secret-key-change-in-production',
+                    'access_token_expire_minutes': 60
+                },
+                'mock_users': [{
+                    'user_id': 'DR001',
+                    'password': 'demo_password',
+                    'name': 'Default User',
+                    'role': 'practitioner',
+                    'abha_id': '00-0000-0000-0000',
+                    'email': 'default@example.com',
+                    'facility': 'Default Facility'
+                }]
+            }
+            
+    def generate_mock_abha_token(self, user_id: str, password: str) -> Optional[Dict]:
+        """
+        Generate mock ABHA token for demo
+        In production, this would call ABDM APIs
+        """
+        user = self.users_db.get(user_id)
+        
+        # Mock authentication: check if user exists and password matches
+        if not user or user.get('password') != password:
+            return None
+        
+        # Fetch token expiration from the nested jwt_settings object
+        expire_minutes = self.config['jwt_settings']['access_token_expire_minutes']
+
+        # Generate JWT token
+        token_data = {
+            'user_id': user_id,
+            'abha_id': user['abha_id'],
+            'name': user['name'],
+            'role': user['role'],
+            'facility': user.get('facility', 'N/A'),
+            'email': user.get('email'),
+            'permissions': user.get('permissions', []), # ADDED permissions
+            'iat': datetime.utcnow(),
+            # CHANGED: Use the correct nested key from your config
+            'exp': datetime.utcnow() + timedelta(minutes=expire_minutes)
+        }
+        
+        access_token = jwt.encode(token_data, self.secret_key, algorithm=self.config['jwt_settings']['algorithm'])
+        
+        # Generate refresh token
+        refresh_token = secrets.token_urlsafe(32)
+        
+        return {
+            'access_token': access_token,
+            'refresh_token': refresh_token,
+            'token_type': 'Bearer',
+            # CHANGED: Use the correct nested key from your config
+            'expires_in': expire_minutes * 60,
+            'user_info': {
+                'user_id': user_id,
+                'abha_id': user['abha_id'],
+                'name': user['name'],
+                'role': user['role'],
+                'facility': user.get('facility', 'N/A'),
+                'specialization': user.get('specialization', 'N/A'),
+                'email': user.get('email')
+            }
+        }
+    
+    def verify_token(self, token: str) -> Optional[Dict]:
+        """Verify JWT token and return user info"""
+        try:
+            payload = jwt.decode(
+                token, 
+                self.secret_key, 
+                algorithms=[self.config['jwt_settings']['algorithm']]
+            )
+            # No need for manual expiration check, pyjwt does it automatically
+            return payload
+        except jwt.ExpiredSignatureError:
+            # Token has expired
+            return None
+        except jwt.InvalidTokenError:
+            # Any other token error
+            return None
+    
+    def get_user_info(self, token: str) -> Optional[Dict]:
+        """Get user information from token"""
+        payload = self.verify_token(token)
+        if not payload:
+            return None
+        
+        user_id = payload.get('user_id')
+        return self.users_db.get(user_id)
+    
+    def check_permission(self, token: str, required_role: str) -> bool:
+        """Check if user has required role/permission"""
+        payload = self.verify_token(token)
+        if not payload:
+            return False
+        
+        user_role = payload.get('role')
+        
+        # Using role_permissions from config if available, otherwise fallback
+        role_config = self.config.get('role_permissions', {}).get(user_role)
+        if role_config:
+            # A more dynamic permission check could be added here if needed
+            # For now, we stick to a simple role hierarchy
+            pass
+
+        role_levels = {
+            'admin': 4,
+            'auditor': 3,
+            'researcher': 2,
+            'practitioner': 1
+        }
+        
+        user_level = role_levels.get(user_role, 0)
+        required_level = role_levels.get(required_role, 999) # Default to a high number
+        
+        return user_level >= required_level
+    
+    def create_session(self, user_id: str) -> str:
+        """Create session ID for tracking"""
+        session_data = f"{user_id}-{datetime.utcnow().isoformat()}-{secrets.token_hex(8)}"
+        session_id = hashlib.sha256(session_data.encode()).hexdigest()[:16]
+        return session_id
+    
+    # ... (register_user and validate_abha_id methods can remain as they are) ...
+    def register_user(self, user_data: Dict) -> Dict:
+        """
+        Register new user (mock implementation) - Note: This only adds to the in-memory DB.
+        """
+        user_id = f"DR{secrets.randbelow(1000):03d}"
+        
+        self.users_db[user_id] = {
+            'user_id': user_id,
+            'password': user_data.get('password', 'password'), # Added default password
+            'abha_id': user_data.get('abha_id'),
+            'name': user_data.get('name'),
+            'role': user_data.get('role', 'practitioner'),
+            'facility': user_data.get('facility'),
+            'specialization': user_data.get('specialization'),
+            'license': user_data.get('license'),
+            'email': user_data.get('email'),
+            'phone': user_data.get('phone')
+        }
+        
+        return {
+            'user_id': user_id,
+            'status': 'registered',
+            'message': 'User registered successfully (session only)'
+        }
+    
+    def validate_abha_id(self, abha_id: str) -> bool:
+        """Validate ABHA ID format using regex from config"""
+        import re
+        validation_config = self.config.get('abha_validation', {})
+        if not validation_config.get('validate_abha_format', True):
+            return True # Skip validation if disabled
+        
+        pattern = validation_config.get('abha_regex', r'^\d{2}-\d{4}-\d{4}-\d{4}$')
+        return bool(re.match(pattern, abha_id))
+
+
+class AuthMiddleware:
+    """Middleware for FastAPI/Flask to handle authentication"""
+    
+    def __init__(self, auth_service: ABHAAuthService):
+        self.auth_service = auth_service
+    
+    def authenticate_request(self, authorization_header: Optional[str]) -> Optional[Dict]:
+        """
+        Extract and verify token from Authorization header
+        
+        Args:
+            authorization_header: "Bearer <token>"
+        
+        Returns:
+            User payload if valid, None otherwise
+        """
+        if not authorization_header:
+            return None
+        
+        try:
+            scheme, token = authorization_header.split()
+            if scheme.lower() != 'bearer':
+                return None
+            
+            return self.auth_service.verify_token(token)
+        except ValueError:
+            return None
+    
+    def require_role(self, user_payload: Optional[Dict], required_role: str) -> bool:
+        """Check if user has required role"""
+        if not user_payload:
+            return False
+        
+        # Let the auth service handle the logic
+        user_role = user_payload.get('role')
+        
+        role_levels = {
+            'admin': 4,
+            'auditor': 3,
+            'researcher': 2,
+            'practitioner': 1
+        }
+        
+        user_level = role_levels.get(user_role, 0)
+        required_level = role_levels.get(required_role, 999)
+        
+        return user_level >= required_level
+
+# Example usage
+if __name__ == "__main__":
+    # Point to the actual config for testing
+    auth = ABHAAuthService(config_path='../config/abha_config.json')
+    
+    # Mock login with a user from the JSON file
+    test_user = "ADMIN001"
+    test_pass = "admin_password"
+    result = auth.generate_mock_abha_token(test_user, test_pass)
+
+    if result:
+        print("✅ Login successful!")
+        print(f"Access Token: {result['access_token'][:50]}...")
+        print(f"User: {result['user_info']['name']}")
+        print(f"Role: {result['user_info']['role']}")
+        
+        # Verify token
+        access_token = result['access_token']
+        payload = auth.verify_token(access_token)
+        print(f"\n✅ Token verified for: {payload['name']}")
+        
+        # Check permission
+        has_admin_perm = auth.check_permission(access_token, 'admin')
+        print(f"Has admin permission: {has_admin_perm}")
+
+        has_practitioner_perm = auth.check_permission(access_token, 'practitioner')
+        print(f"Has practitioner permission: {has_practitioner_perm}")
+
+    else:
+        print(f"❌ Login failed for user: {test_user}")
+
+// database.py
+
+"""
+Database Models and Connection for AYUSH Terminology Bridge
+Supports: SQLite (development), PostgreSQL (production)
+"""
+
+from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Boolean, Text, JSON
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from datetime import datetime
+from typing import Optional, List, Dict
+import json
+import os
+
+# ============= DATABASE CONFIGURATION =============
+
+# Database URL - defaults to SQLite for development
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "sqlite:///./ayush_terminology.db"
+)
+
+# For PostgreSQL in production, use:
+# DATABASE_URL = "postgresql://user:password@localhost/ayush_terminology"
+
+# Create engine
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        echo=False  # Set to True for SQL query logging
+    )
+else:
+    engine = create_engine(DATABASE_URL, echo=False)
+
+# Create session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Create base class for models
+Base = declarative_base()
+
+# ============= DATABASE MODELS =============
+
+class User(Base):
+    """User model for authentication and authorization"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(50), unique=True, index=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), unique=True, index=True)
+    role = Column(String(50), nullable=False)  # practitioner, researcher, auditor, admin
+    abha_id = Column(String(50), unique=True, index=True)
+    abha_address = Column(String(255))
+    facility = Column(String(255))
+    specialization = Column(String(255))
+    license_number = Column(String(100))
+    hashed_password = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime)
+    login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
+
+class AuditLog(Base):
+    """Audit log model for tracking all system activities"""
+    __tablename__ = "audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    user_id = Column(String(50), index=True)
+    user_role = Column(String(50))
+    action_type = Column(String(100), index=True)
+    endpoint = Column(String(255))
+    method = Column(String(10))
+    ip_address = Column(String(50))
+    user_agent = Column(Text)
+    response_status = Column(Integer)
+    response_time_ms = Column(Float)
+    request_body = Column(Text, nullable=True)
+    response_body = Column(Text, nullable=True)
+    metadata = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+class SearchLog(Base):
+    """Search activity log for analytics"""
+    __tablename__ = "search_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    user_id = Column(String(50), index=True)
+    query = Column(String(500), index=True)
+    results_count = Column(Integer)
+    top_result_code = Column(String(50))
+    ml_enabled = Column(Boolean, default=False)
+    response_time_ms = Column(Float)
+
+class TranslationLog(Base):
+    """Translation activity log for analytics"""
+    __tablename__ = "translation_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    user_id = Column(String(50), index=True)
+    namaste_code = Column(String(50), index=True)
+    target_system = Column(String(50))
+    target_codes = Column(JSON)
+    confidence_score = Column(Float)
+    ml_enhanced = Column(Boolean, default=False)
+    success = Column(Boolean, default=True)
+    response_time_ms = Column(Float)
+
+class FHIRResourceLog(Base):
+    """FHIR resource creation log"""
+    __tablename__ = "fhir_resource_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    user_id = Column(String(50), index=True)
+    resource_type = Column(String(50), index=True)
+    resource_id = Column(String(100), unique=True)
+    patient_id = Column(String(100), index=True)
+    abha_id = Column(String(50), index=True, nullable=True)
+    namaste_code = Column(String(50))
+    icd_codes = Column(JSON)
+    resource_json = Column(Text)
+
+class Session(Base):
+    """User session model"""
+    __tablename__ = "sessions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(255), unique=True, index=True)
+    user_id = Column(String(50), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime)
+    is_active = Column(Boolean, default=True)
+    ip_address = Column(String(50))
+    user_agent = Column(Text)
+
+class CodeMapping(Base):
+    """Store NAMASTE to ICD-11 mappings"""
+    __tablename__ = "code_mappings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    namaste_code = Column(String(50), index=True)
+    namaste_display = Column(String(500))
+    icd11_code = Column(String(50), index=True)
+    icd11_display = Column(String(500))
+    linearization = Column(String(20))  # 'tm2' or 'mms'
+    equivalence = Column(String(20))  # 'equivalent', 'narrower', 'broader', 'related'
+    confidence = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(String(50))
+    verified = Column(Boolean, default=False)
+
+# ============= DATABASE FUNCTIONS =============
+
+def init_db():
+    """Initialize database - create all tables"""
+    print("🔄 Initializing database...")
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database initialized")
+
+def get_db() -> Session:
+    """Dependency to get database session"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def create_default_users(db: Session):
+    """Create default demo users"""
+    from passlib.context import CryptContext
+    
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    
+    default_users = [
+        {
+            "user_id": "DR001",
+            "name": "Dr. Rajesh Kumar",
+            "email": "dr.rajesh@example.com",
+            "role": "practitioner",
+            "abha_id": "12-3456-7890-1234",
+            "abha_address": "drrajesh@abdm",
+            "facility": "AIIMS Delhi",
+            "specialization": "Ayurveda",
+            "license_number": "AY/DL/2020/12345",
+            "hashed_password": pwd_context.hash("demo_password")
+        },
+        {
+            "user_id": "DR002",
+            "name": "Dr. Priya Sharma",
+            "email": "dr.priya@example.com",
+            "role": "practitioner",
+            "abha_id": "98-7654-3210-5678",
+            "abha_address": "drpriya@abdm",
+            "facility": "Banaras Hindu University",
+            "specialization": "Unani",
+            "license_number": "UN/UP/2019/67890",
+            "hashed_password": pwd_context.hash("demo_password")
+        },
+        {
+            "user_id": "ADMIN001",
+            "name": "System Administrator",
+            "email": "admin@ayush.gov.in",
+            "role": "admin",
+            "abha_id": "11-1111-1111-1111",
+            "abha_address": "admin@abdm",
+            "facility": "AYUSH Ministry HQ",
+            "specialization": "System Administration",
+            "license_number": "ADMIN/2024/001",
+            "hashed_password": pwd_context.hash("admin_password")
+        },
+        {
+            "user_id": "RESEARCHER001",
+            "name": "Dr. Amit Verma",
+            "email": "amit.verma@research.in",
+            "role": "researcher",
+            "abha_id": "22-2222-2222-2222",
+            "abha_address": "researcher@abdm",
+            "facility": "CCRAS",
+            "specialization": "Research",
+            "license_number": "RES/2023/001",
+            "hashed_password": pwd_context.hash("research_password")
+        },
+        {
+            "user_id": "AUDITOR001",
+            "name": "Ms. Sneha Patel",
+            "email": "sneha.patel@audit.gov.in",
+            "role": "auditor",
+            "abha_id": "33-3333-3333-3333",
+            "abha_address": "auditor@abdm",
+            "facility": "AYUSH Quality Assurance",
+            "specialization": "Compliance",
+            "license_number": "AUD/2024/001",
+            "hashed_password": pwd_context.hash("audit_password")
+        }
+    ]
+    
+    for user_data in default_users:
+        # Check if user already exists
+        existing = db.query(User).filter(User.user_id == user_data["user_id"]).first()
+        if not existing:
+            user = User(**user_data)
+            db.add(user)
+    
+    db.commit()
+    print(f"✅ Created {len(default_users)} default users")
+
+# ============= DATABASE UTILITIES =============
+
+class DatabaseManager:
+    """Database manager for common operations"""
+    
+    @staticmethod
+    def log_audit(db: Session, **kwargs):
+        """Log audit entry"""
+        log = AuditLog(**kwargs)
+        db.add(log)
+        db.commit()
+        return log
+    
+    @staticmethod
+    def log_search(db: Session, **kwargs):
+        """Log search activity"""
+        log = SearchLog(**kwargs)
+        db.add(log)
+        db.commit()
+        return log
+    
+    @staticmethod
+    def log_translation(db: Session, **kwargs):
+        """Log translation activity"""
+        log = TranslationLog(**kwargs)
+        db.add(log)
+        db.commit()
+        return log
+    
+    @staticmethod
+    def log_fhir_resource(db: Session, **kwargs):
+        """Log FHIR resource creation"""
+        log = FHIRResourceLog(**kwargs)
+        db.add(log)
+        db.commit()
+        return log
+    
+    @staticmethod
+    def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
+        """Get user by user_id"""
+        return db.query(User).filter(User.user_id == user_id, User.is_active == True).first()
+    
+    @staticmethod
+    def get_recent_audit_logs(db: Session, limit: int = 50) -> List[AuditLog]:
+        """Get recent audit logs"""
+        return db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+    
+    @staticmethod
+    def get_user_statistics(db: Session, user_id: str) -> Dict:
+        """Get statistics for a user"""
+        total_searches = db.query(SearchLog).filter(SearchLog.user_id == user_id).count()
+        total_translations = db.query(TranslationLog).filter(TranslationLog.user_id == user_id).count()
+        total_fhir = db.query(FHIRResourceLog).filter(FHIRResourceLog.user_id == user_id).count()
+        
+        return {
+            "total_searches": total_searches,
+            "total_translations": total_translations,
+            "total_fhir_resources": total_fhir
+        }
+
+# ============= INITIALIZATION =============
+
+def setup_database():
+    """Setup database with tables and default data"""
+    init_db()
+    
+    # Create default users
+    db = SessionLocal()
+    try:
+        create_default_users(db)
+    finally:
+        db.close()
+    
+    print("✅ Database setup complete")
+
+if __name__ == "__main__":
+    setup_database()
+
+// icd11_credentials.json
+
+{
+  "client_id": "e8b0b566-a584-47e5-b079-0596fa55eba5_0602263c-41a3-4998-85db-7dfefb363254",
+  "client_secret": "XbUVDWvis78eVO84hB3G5elPyyzo2w7JjlYtnrgSP9E=",
+  "token_endpoint": "https://icdaccessmanagement.who.int/connect/token",
+  "api_base_url": "https://id.who.int/icd/release/11/2024-01"
+}
+
+// abha_config.json
+
+{
+  "abha_oauth": {
+    "enabled": true,
+    "mock_mode": true,
+    "client_id": "ayush-terminology-bridge-client",
+    "client_secret": "demo_secret_change_in_production",
+    "token_url": "https://dev.abdm.gov.in/gateway/v0.5/sessions",
+    "auth_url": "https://dev.abdm.gov.in/gateway/v0.5/users/auth/init",
+    "userinfo_url": "https://dev.abdm.gov.in/gateway/v0.5/users/profile",
+    "revoke_url": "https://dev.abdm.gov.in/gateway/v0.5/sessions/logout",
+    "scope": "openid profile abha_number",
+    "grant_type": "password",
+    "token_expiry_seconds": 3600,
+    "refresh_token_expiry_seconds": 86400
+  },
+  "jwt_settings": {
+    "algorithm": "HS256",
+    "secret_key": "your-256-bit-secret-key-change-in-production",
+    "access_token_expire_minutes": 60,
+    "refresh_token_expire_days": 7,
+    "issuer": "ayush-terminology-bridge",
+    "audience": "ayush-api-users"
+  },
+  "mock_users": [
+    {
+      "user_id": "DR001",
+      "password": "demo_password",
+      "name": "Dr. Rajesh Kumar",
+      "role": "practitioner",
+      "abha_id": "12-3456-7890-1234",
+      "abha_address": "drrajesh@abdm",
+      "email": "dr.rajesh@example.com",
+      "facility": "AIIMS Delhi",
+      "specialization": "Ayurveda",
+      "license_number": "AY/DL/2020/12345",
+      "permissions": ["read", "write", "translate", "search"]
+    },
+    {
+      "user_id": "DR002",
+      "password": "demo_password",
+      "name": "Dr. Priya Sharma",
+      "role": "practitioner",
+      "abha_id": "98-7654-3210-5678",
+      "abha_address": "drpriya@abdm",
+      "email": "dr.priya@example.com",
+      "facility": "Banaras Hindu University",
+      "specialization": "Unani",
+      "license_number": "UN/UP/2019/67890",
+      "permissions": ["read", "write", "translate", "search"]
+    },
+    {
+      "user_id": "ADMIN001",
+      "password": "admin_password",
+      "name": "System Administrator",
+      "role": "admin",
+      "abha_id": "11-1111-1111-1111",
+      "abha_address": "admin@abdm",
+      "email": "admin@ayush.gov.in",
+      "facility": "AYUSH Ministry HQ",
+      "specialization": "System Administration",
+      "license_number": "ADMIN/2024/001",
+      "permissions": ["read", "write", "translate", "search", "admin", "audit", "manage_users"]
+    },
+    {
+      "user_id": "RESEARCHER001",
+      "password": "research_password",
+      "name": "Dr. Amit Verma",
+      "role": "researcher",
+      "abha_id": "22-2222-2222-2222",
+      "abha_address": "researcher@abdm",
+      "email": "amit.verma@research.in",
+      "facility": "CCRAS",
+      "specialization": "Research",
+      "license_number": "RES/2023/001",
+      "permissions": ["read", "search", "analytics", "export"]
+    },
+    {
+      "user_id": "AUDITOR001",
+      "password": "audit_password",
+      "name": "Ms. Sneha Patel",
+      "role": "auditor",
+      "abha_id": "33-3333-3333-3333",
+      "abha_address": "auditor@abdm",
+      "email": "sneha.patel@audit.gov.in",
+      "facility": "AYUSH Quality Assurance",
+      "specialization": "Compliance",
+      "license_number": "AUD/2024/001",
+      "permissions": ["read", "audit", "view_logs"]
+    }
+  ],
+  "role_permissions": {
+    "practitioner": {
+      "can_search": true,
+      "can_translate": true,
+      "can_create_fhir": true,
+      "can_view_own_audit": true,
+      "can_export_data": false,
+      "can_manage_users": false,
+      "can_view_analytics": false,
+      "rate_limit_per_minute": 100
+    },
+    "researcher": {
+      "can_search": true,
+      "can_translate": true,
+      "can_create_fhir": false,
+      "can_view_own_audit": true,
+      "can_export_data": true,
+      "can_manage_users": false,
+      "can_view_analytics": true,
+      "rate_limit_per_minute": 200
+    },
+    "auditor": {
+      "can_search": true,
+      "can_translate": false,
+      "can_create_fhir": false,
+      "can_view_own_audit": true,
+      "can_export_data": true,
+      "can_manage_users": false,
+      "can_view_analytics": true,
+      "can_view_all_audit": true,
+      "rate_limit_per_minute": 500
+    },
+    "admin": {
+      "can_search": true,
+      "can_translate": true,
+      "can_create_fhir": true,
+      "can_view_own_audit": true,
+      "can_export_data": true,
+      "can_manage_users": true,
+      "can_view_analytics": true,
+      "can_view_all_audit": true,
+      "can_manage_system": true,
+      "rate_limit_per_minute": 1000
+    }
+  },
+  "security": {
+    "require_https": false,
+    "allowed_origins": ["http://localhost:3000", "http://localhost:8000", "https://ayush-terminology.gov.in"],
+    "max_login_attempts": 5,
+    "lockout_duration_minutes": 30,
+    "session_timeout_minutes": 60,
+    "require_mfa": false,
+    "password_min_length": 8,
+    "password_require_special_char": false
+  },
+  "audit": {
+    "enabled": true,
+    "log_all_requests": true,
+    "log_request_bodies": false,
+    "log_response_bodies": false,
+    "retention_days": 90,
+    "sensitive_fields": ["password", "token", "secret", "api_key"]
+  },
+  "abha_validation": {
+    "validate_abha_format": true,
+    "abha_regex": "^\\d{2}-\\d{4}-\\d{4}-\\d{4}$",
+    "validate_abha_address": true,
+    "abha_address_regex": "^[a-zA-Z0-9._-]+@abdm$",
+    "check_abha_against_registry": false
+  },
+  "features": {
+    "ml_matching_enabled": true,
+    "batch_translation_enabled": true,
+    "fhir_validation_enabled": true,
+    "real_icd11_api_enabled": true,
+    "cache_enabled": true,
+    "rate_limiting_enabled": true,
+    "analytics_enabled": true
+  },
+  "development": {
+    "debug_mode": true,
+    "skip_auth_for_health": true,
+    "mock_abha_validation": true,
+    "log_level": "INFO",
+    "enable_swagger": true,
+    "enable_request_logging": true
+  }
+}
+
+// routes.py
+
+"""
+Modular route definitions for AYUSH Terminology Bridge API
+Separates concerns: auth, terminology, FHIR, analytics, audit
+"""
+
+from fastapi import APIRouter, HTTPException, Depends, Header
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict
+import time
+
+# Import services (will be injected)
+from services.csv_parser import NAMASTEParser
+from services.icd11_client import ICD11Client
+from services.mapping_engine import MappingEngine
+from services.fhir_generator import FHIRGenerator
+from services.ml_matcher import SemanticMatcher
+from services.audit_service import AuditService
+from services.abha_auth import ABHAAuthService, AuthMiddleware
+
+# ============= REQUEST/RESPONSE MODELS =============
+
+class LoginRequest(BaseModel):
+    user_id: str = Field(..., example="DR001")
+    password: str = Field(..., example="demo_password")
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., example="diabetes")
+    limit: Optional[int] = Field(10, ge=1, le=50)
+    use_ml: Optional[bool] = Field(True, description="Use ML semantic matching")
+
+class TranslateRequest(BaseModel):
+    namaste_code: str = Field(..., example="NAM0004")
+    use_ml: Optional[bool] = Field(True, description="Use ML hybrid matching")
+
+class ConditionRequest(BaseModel):
+    namaste_code: str = Field(..., example="NAM0004")
+    icd_codes: List[str] = Field(..., example=["TM2.7", "5A00"])
+    patient_id: str = Field(..., example="PATIENT-001")
+    abha_id: Optional[str] = Field(None, example="12-3456-7890-1234")
+
+class ConceptMapRequest(BaseModel):
+    source_code: str = Field(..., example="NAM0004")
+    target_codes: List[str] = Field(..., example=["TM2.7", "5A00"])
+
+class BatchTranslateRequest(BaseModel):
+    namaste_codes: List[str] = Field(..., example=["NAM0001", "NAM0004", "NAM0010"])
+    use_ml: Optional[bool] = Field(True)
+
+# ============= DEPENDENCY INJECTION =============
+
+class ServiceContainer:
+    """Container for all services - injected at app startup"""
+    def __init__(
+        self,
+        namaste_parser: NAMASTEParser,
+        icd_client: ICD11Client,
+        mapping_engine: MappingEngine,
+        fhir_gen: FHIRGenerator,
+        ml_matcher: SemanticMatcher,
+        audit_service: AuditService,
+        auth_service: ABHAAuthService,
+        auth_middleware: AuthMiddleware
+    ):
+        self.namaste_parser = namaste_parser
+        self.icd_client = icd_client
+        self.mapping_engine = mapping_engine
+        self.fhir_gen = fhir_gen
+        self.ml_matcher = ml_matcher
+        self.audit_service = audit_service
+        self.auth_service = auth_service
+        self.auth_middleware = auth_middleware
+
+# Global service container (initialized in main.py)
+services: Optional[ServiceContainer] = None
+
+def get_services() -> ServiceContainer:
+    """Dependency to get service container"""
+    if services is None:
+        raise RuntimeError("Services not initialized")
+    return services
+
+async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    """Dependency to extract and verify user from token"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    svc = get_services()
+    user = svc.auth_middleware.authenticate_request(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return user
+
+# ============= AUTHENTICATION ROUTES =============
+
+auth_router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+@auth_router.post("/login")
+async def login(request: LoginRequest, svc: ServiceContainer = Depends(get_services)):
+    """
+    Login with ABHA credentials (mock implementation)
+    Returns JWT token for subsequent API calls
+    """
+    result = svc.auth_service.generate_mock_abha_token(request.user_id, request.password)
+    
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Create session
+    session_id = svc.auth_service.create_session(request.user_id)
+    result['session_id'] = session_id
+    
+    svc.audit_service.log_api_call(
+        action_type="LOGIN",
+        user_id=request.user_id,
+        endpoint="/api/auth/login",
+        method="POST",
+        response_status=200,
+        metadata={'session_id': session_id}
+    )
+    
+    return result
+
+@auth_router.get("/userinfo")
+async def get_userinfo(current_user: dict = Depends(get_current_user)):
+    """Get current user information"""
+    return current_user
+
+@auth_router.post("/logout")
+async def logout(
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Logout and invalidate session"""
+    svc.audit_service.log_api_call(
+        action_type="LOGOUT",
+        user_id=current_user['user_id'],
+        endpoint="/api/auth/logout",
+        method="POST",
+        response_status=200
+    )
+    
+    return {"message": "Logged out successfully"}
+
+@auth_router.post("/refresh")
+async def refresh_token(
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Refresh JWT token"""
+    new_token = svc.auth_service.generate_mock_abha_token(
+        current_user['user_id'],
+        "refresh"  # Mock password for refresh
+    )
+    
+    return new_token
+
+# ============= TERMINOLOGY ROUTES =============
+
+terminology_router = APIRouter(prefix="/api/terminology", tags=["Terminology"])
+
+@terminology_router.get("/search")
+async def search_namaste(
+    q: str,
+    limit: int = 10,
+    use_ml: bool = False,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """
+    Search NAMASTE codes with optional ML semantic matching
+    Requires authentication
+    """
+    start_time = time.time()
+    
+    # Basic fuzzy search
+    results = svc.namaste_parser.search_codes(q, limit)
+    
+    # Enhanced ML semantic search if requested
+    if use_ml and results:
+        enhanced_results = []
+        for result in results:
+            semantic_score = svc.ml_matcher.compute_similarity(q, result['display'])
+            result['semantic_score'] = semantic_score
+            result['combined_score'] = (result['match_score'] + semantic_score) / 2
+            enhanced_results.append(result)
+        
+        enhanced_results.sort(key=lambda x: x['combined_score'], reverse=True)
+        results = enhanced_results
+    
+    # Log search
+    top_result = results[0]['code'] if results else None
+    svc.audit_service.log_search(
+        user_id=current_user['user_id'],
+        query=q,
+        results_count=len(results),
+        top_result=top_result
+    )
+    
+    response_time = (time.time() - start_time) * 1000
+    
+    return {
+        "query": q,
+        "results": results,
+        "count": len(results),
+        "ml_enabled": use_ml,
+        "response_time_ms": round(response_time, 2)
+    }
+
+@terminology_router.post("/translate")
+async def translate_code(
+    request: TranslateRequest,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """
+    Translate NAMASTE code to ICD-11 (TM2 + Biomedicine)
+    Uses hybrid fuzzy + ML semantic matching
+    """
+    start_time = time.time()
+    
+    # Get basic mapping
+    mapping = svc.mapping_engine.translate_namaste_to_icd(request.namaste_code)
+    
+    if 'error' in mapping:
+        raise HTTPException(status_code=404, detail=mapping['error'])
+    
+    # Enhance with ML if requested
+    if request.use_ml:
+        namaste_data = mapping['namaste']
+        
+        # Get ICD candidates for re-ranking
+        tm2_matches = mapping.get('icd11_tm2_matches', [])
+        bio_matches = mapping.get('icd11_biomedicine_matches', [])
+        
+        # Re-rank using ML semantic similarity
+        for match in tm2_matches:
+            match['ml_score'] = svc.ml_matcher.compute_similarity(
+                namaste_data['display'],
+                match['title']
+            )
+        
+        for match in bio_matches:
+            match['ml_score'] = svc.ml_matcher.compute_similarity(
+                namaste_data['display'],
+                match['title']
+            )
+        
+        # Sort by ML score
+        tm2_matches.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
+        bio_matches.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
+        
+        mapping['ml_enhanced'] = True
+    
+    # Log translation
+    svc.audit_service.log_translation(
+        user_id=current_user['user_id'],
+        source_code=request.namaste_code,
+        target_system='ICD-11',
+        target_codes=[m['code'] for m in mapping.get('icd11_tm2_matches', [])[:3]],
+        confidence_score=mapping.get('confidence', 0)
+    )
+    
+    response_time = (time.time() - start_time) * 1000
+    mapping['response_time_ms'] = round(response_time, 2)
+    
+    return mapping
+
+@terminology_router.post("/translate/batch")
+async def batch_translate(
+    request: BatchTranslateRequest,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Batch translate multiple NAMASTE codes"""
+    results = []
+    
+    for code in request.namaste_codes:
+        try:
+            mapping = svc.mapping_engine.translate_namaste_to_icd(code)
+            
+            if request.use_ml and 'error' not in mapping:
+                # ML enhancement
+                namaste_data = mapping['namaste']
+                tm2_matches = mapping.get('icd11_tm2_matches', [])
+                
+                for match in tm2_matches:
+                    match['ml_score'] = svc.ml_matcher.compute_similarity(
+                        namaste_data['display'],
+                        match['title']
+                    )
+                tm2_matches.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
+            
+            results.append({
+                "namaste_code": code,
+                "success": True,
+                "mapping": mapping
+            })
+        except Exception as e:
+            results.append({
+                "namaste_code": code,
+                "success": False,
+                "error": str(e)
+            })
+    
+    return {
+        "total": len(request.namaste_codes),
+        "successful": len([r for r in results if r['success']]),
+        "results": results
+    }
+
+@terminology_router.get("/namaste/{code}")
+async def get_namaste_code(
+    code: str,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Get detailed information about a NAMASTE code"""
+    code_data = svc.namaste_parser.get_code_by_id(code)
+    
+    if not code_data:
+        raise HTTPException(status_code=404, detail=f"NAMASTE code {code} not found")
+    
+    return {
+        "code": code,
+        "details": code_data,
+        "system": "http://namaste.ayush.gov.in",
+        "version": "1.0"
+    }
+
+@terminology_router.get("/icd11/{code}")
+async def get_icd11_entity(
+    code: str,
+    linearization: str = "mms",
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """
+    Get ICD-11 entity details
+    Supports both TM2 and MMS linearizations
+    """
+    try:
+        entity = svc.icd_client.get_entity(code, linearization)
+        
+        if not entity:
+            raise HTTPException(status_code=404, detail=f"ICD-11 code {code} not found")
+        
+        return {
+            "code": code,
+            "linearization": linearization,
+            "entity": entity,
+            "system": f"http://id.who.int/icd/release/11/{linearization}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============= FHIR ROUTES =============
+
+fhir_router = APIRouter(prefix="/api/fhir", tags=["FHIR"])
+
+@fhir_router.post("/Condition")
+async def create_condition_resource(
+    request: ConditionRequest,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Create FHIR R4 Condition resource with dual coding"""
+    # Validate NAMASTE code
+    namaste_data = svc.namaste_parser.get_code_by_id(request.namaste_code)
+    if not namaste_data:
+        raise HTTPException(status_code=404, detail=f"NAMASTE code {request.namaste_code} not found")
+    
+    # Create FHIR Condition
+    condition = svc.fhir_gen.create_condition(
+        namaste_code=request.namaste_code,
+        namaste_display=namaste_data['display'],
+        icd_codes=request.icd_codes,
+        patient_id=request.patient_id,
+        abha_id=request.abha_id
+    )
+    
+    # Log FHIR resource creation
+    svc.audit_service.log_fhir_resource(
+        user_id=current_user['user_id'],
+        resource_type='Condition',
+        resource_id=condition['id'],
+        patient_id=request.patient_id,
+        codes=[request.namaste_code] + request.icd_codes
+    )
+    
+    return condition
+
+@fhir_router.post("/ConceptMap")
+async def create_concept_map(
+    request: ConceptMapRequest,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Create FHIR R4 ConceptMap resource"""
+    # Validate source code
+    namaste_data = svc.namaste_parser.get_code_by_id(request.source_code)
+    if not namaste_data:
+        raise HTTPException(status_code=404, detail=f"NAMASTE code {request.source_code} not found")
+    
+    # Create ConceptMap
+    concept_map = svc.fhir_gen.create_concept_map(
+        source_code=request.source_code,
+        source_display=namaste_data['display'],
+        target_codes=request.target_codes
+    )
+    
+    svc.audit_service.log_fhir_resource(
+        user_id=current_user['user_id'],
+        resource_type='ConceptMap',
+        resource_id=concept_map['id'],
+        codes=[request.source_code] + request.target_codes
+    )
+    
+    return concept_map
+
+@fhir_router.get("/ValueSet")
+async def get_value_set(
+    system: str = "namaste",
+    filter: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Get FHIR ValueSet for NAMASTE codes"""
+    if system.lower() == "namaste":
+        codes = svc.namaste_parser.codes
+        if filter:
+            codes = [c for c in codes if filter.lower() in c['display'].lower()]
+        
+        value_set = svc.fhir_gen.create_value_set(
+            codes=codes[:50],
+            system_name="NAMASTE"
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Only NAMASTE ValueSet supported currently")
+    
+    return value_set
+
+# ============= AUDIT ROUTES =============
+
+audit_router = APIRouter(prefix="/api/audit", tags=["Audit"])
+
+@audit_router.get("/recent")
+async def get_recent_audit_logs(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Get recent audit logs (admin only)"""
+    if current_user.get('role') not in ['admin', 'auditor']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    logs = svc.audit_service.get_recent_logs(limit)
+    return {
+        "logs": logs,
+        "count": len(logs)
+    }
+
+@audit_router.get("/user/{user_id}")
+async def get_user_activity(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Get activity logs for specific user"""
+    # Users can only view their own logs unless admin
+    if current_user['user_id'] != user_id and current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    logs = svc.audit_service.get_user_activity(user_id)
+    stats = svc.audit_service.get_user_statistics(user_id)
+    
+    return {
+        "user_id": user_id,
+        "logs": logs,
+        "statistics": stats
+    }
+
+@audit_router.get("/export")
+async def export_audit_logs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Export audit logs (admin only)"""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    logs = svc.audit_service.export_logs(start_date, end_date)
+    return {
+        "logs": logs,
+        "count": len(logs),
+        "format": "json"
+    }
+
+# ============= ANALYTICS ROUTES =============
+
+analytics_router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+
+@analytics_router.get("/popular-searches")
+async def get_popular_searches(
+    limit: int = 10,
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Get most popular search queries"""
+    if current_user.get('role') not in ['admin', 'researcher']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    popular = svc.audit_service.get_popular_searches(limit)
+    return {
+        "popular_searches": popular,
+        "count": len(popular)
+    }
+
+@analytics_router.get("/translation-stats")
+async def get_translation_statistics(
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Get translation usage statistics"""
+    if current_user.get('role') not in ['admin', 'researcher']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    stats = svc.audit_service.get_translation_statistics()
+    return stats
+
+@analytics_router.get("/dashboard-stats")
+async def get_dashboard_statistics(
+    current_user: dict = Depends(get_current_user),
+    svc: ServiceContainer = Depends(get_services)
+):
+    """Get comprehensive dashboard statistics"""
+    if current_user.get('role') not in ['admin', 'researcher']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    return {
+        "total_searches": svc.audit_service.get_total_searches(),
+        "total_translations": svc.audit_service.get_total_translations(),
+        "total_users": svc.audit_service.get_total_users(),
+        "popular_codes": svc.audit_service.get_popular_codes(10),
+        "recent_activity": svc.audit_service.get_recent_logs(20),
+        "translation_stats": svc.audit_service.get_translation_statistics()
+    }
+
+// middleware.py
+
+"""
+Custom middleware for AYUSH Terminology Bridge API
+Handles: Audit logging, Rate limiting, Request timing, CORS, Security headers
+"""
+
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
+import time
+from typing import Callable, Optional
+import json
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+from services.audit_service import AuditService
+from services.abha_auth import AuthMiddleware as ABHAAuthMiddleware
+
+
+class AuditMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to log all API requests to audit trail
+    Captures: endpoint, method, user, IP, timing, response status
+    """
+    
+    def __init__(self, app, audit_service: AuditService, auth_middleware: ABHAAuthMiddleware):
+        super().__init__(app)
+        self.audit_service = audit_service
+        self.auth_middleware = auth_middleware
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        start_time = time.time()
+        
+        # Extract user info if available
+        auth_header = request.headers.get('authorization')
+        user_id = None
+        user_role = None
+        
+        if auth_header:
+            user = self.auth_middleware.authenticate_request(auth_header)
+            if user:
+                user_id = user.get('user_id')
+                user_role = user.get('role')
+        
+        # Store request details for potential error logging
+        request.state.start_time = start_time
+        request.state.user_id = user_id
+        
+        try:
+            # Process request
+            response = await call_next(request)
+            
+            # Calculate response time
+            response_time = (time.time() - start_time) * 1000
+            
+            # Log to audit trail (skip health checks)
+            if not request.url.path.endswith('/health'):
+                self.audit_service.log_api_call(
+                    action_type=f"{request.method}_{request.url.path}",
+                    user_id=user_id,
+                    user_role=user_role,
+                    endpoint=str(request.url.path),
+                    method=request.method,
+                    ip_address=request.client.host if request.client else "unknown",
+                    user_agent=request.headers.get('user-agent'),
+                    response_status=response.status_code,
+                    response_time_ms=response_time
+                )
+            
+            # Add custom headers
+            response.headers["X-Response-Time"] = f"{response_time:.2f}ms"
+            response.headers["X-API-Version"] = "2.0.0"
+            
+            return response
+            
+        except Exception as e:
+            # Log error
+            response_time = (time.time() - start_time) * 1000
+            
+            self.audit_service.log_api_call(
+                action_type=f"ERROR_{request.method}_{request.url.path}",
+                user_id=user_id,
+                user_role=user_role,
+                endpoint=str(request.url.path),
+                method=request.method,
+                ip_address=request.client.host if request.client else "unknown",
+                user_agent=request.headers.get('user-agent'),
+                response_status=500,
+                response_time_ms=response_time,
+                metadata={'error': str(e)}
+            )
+            
+            raise
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Simple rate limiting middleware
+    Limits: 100 requests per minute per IP
+    """
+    
+    def __init__(self, app, max_requests: int = 100, window_seconds: int = 60):
+        super().__init__(app)
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.request_counts = defaultdict(list)
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Skip rate limiting for health checks
+        if request.url.path.endswith('/health'):
+            return await call_next(request)
+        
+        # Get client IP
+        client_ip = request.client.host if request.client else "unknown"
+        
+        # Clean old entries
+        current_time = datetime.now()
+        cutoff_time = current_time - timedelta(seconds=self.window_seconds)
+        
+        self.request_counts[client_ip] = [
+            req_time for req_time in self.request_counts[client_ip]
+            if req_time > cutoff_time
+        ]
+        
+        # Check rate limit
+        if len(self.request_counts[client_ip]) >= self.max_requests:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Rate limit exceeded",
+                    "message": f"Maximum {self.max_requests} requests per {self.window_seconds} seconds",
+                    "retry_after": self.window_seconds
+                },
+                headers={
+                    "Retry-After": str(self.window_seconds),
+                    "X-RateLimit-Limit": str(self.max_requests),
+                    "X-RateLimit-Remaining": "0"
+                }
+            )
+        
+        # Add current request
+        self.request_counts[client_ip].append(current_time)
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Add rate limit headers
+        remaining = self.max_requests - len(self.request_counts[client_ip])
+        response.headers["X-RateLimit-Limit"] = str(self.max_requests)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(int((current_time + timedelta(seconds=self.window_seconds)).timestamp()))
+        
+        return response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Add security headers to all responses
+    Protects against: XSS, clickjacking, MIME sniffing
+    """
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+        
+        # Security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        
+        return response
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """
+    Detailed request/response logging for debugging
+    Logs request body and response for non-health endpoints
+    """
+    
+    def __init__(self, app, log_bodies: bool = False):
+        super().__init__(app)
+        self.log_bodies = log_bodies
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Skip logging for health checks
+        if request.url.path.endswith('/health'):
+            return await call_next(request)
+        
+        # Log request
+        print(f"\n{'='*60}")
+        print(f"[{datetime.now().isoformat()}] {request.method} {request.url.path}")
+        print(f"Client: {request.client.host if request.client else 'unknown'}")
+        print(f"User-Agent: {request.headers.get('user-agent', 'N/A')}")
+        
+        # Log request body if enabled (be careful with sensitive data)
+        if self.log_bodies and request.method in ['POST', 'PUT', 'PATCH']:
+            try:
+                body = await request.body()
+                if body:
+                    print(f"Request Body: {body.decode('utf-8')[:500]}")  # Limit to 500 chars
+            except:
+                pass
+        
+        # Process request
+        start_time = time.time()
+        response = await call_next(request)
+        response_time = (time.time() - start_time) * 1000
+        
+        # Log response
+        print(f"Status: {response.status_code}")
+        print(f"Response Time: {response_time:.2f}ms")
+        print(f"{'='*60}\n")
+        
+        return response
+
+
+class CacheMiddleware(BaseHTTPMiddleware):
+    """
+    Simple in-memory cache for GET requests
+    Caches: Terminology lookups, ICD-11 entities
+    """
+    
+    def __init__(self, app, ttl_seconds: int = 300):
+        super().__init__(app)
+        self.cache = {}
+        self.ttl_seconds = ttl_seconds
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Only cache GET requests
+        if request.method != "GET":
+            return await call_next(request)
+        
+        # Skip caching for certain endpoints
+        skip_paths = ['/health', '/audit', '/analytics']
+        if any(path in request.url.path for path in skip_paths):
+            return await call_next(request)
+        
+        # Generate cache key
+        cache_key = f"{request.method}:{request.url.path}:{request.url.query}"
+        
+        # Check cache
+        if cache_key in self.cache:
+            cached_data, cached_time = self.cache[cache_key]
+            
+            # Check if cache is still valid
+            if (datetime.now() - cached_time).total_seconds() < self.ttl_seconds:
+                # Return cached response
+                return JSONResponse(
+                    content=cached_data,
+                    headers={"X-Cache": "HIT", "X-Cache-Age": str(int((datetime.now() - cached_time).total_seconds()))}
+                )
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Cache successful GET responses
+        if response.status_code == 200 and request.method == "GET":
+            try:
+                # Read response body
+                body = b""
+                async for chunk in response.body_iterator:
+                    body += chunk
+                
+                # Parse JSON
+                response_data = json.loads(body.decode())
+                
+                # Store in cache
+                self.cache[cache_key] = (response_data, datetime.now())
+                
+                # Clean old cache entries (keep last 1000)
+                if len(self.cache) > 1000:
+                    # Remove oldest 200 entries
+                    sorted_keys = sorted(self.cache.keys(), key=lambda k: self.cache[k][1])
+                    for key in sorted_keys[:200]:
+                        del self.cache[key]
+                
+                # Return new response
+                return JSONResponse(
+                    content=response_data,
+                    headers={"X-Cache": "MISS"}
+                )
+            except:
+                pass
+        
+        return response
+
+
+class ErrorHandlingMiddleware(BaseHTTPMiddleware):
+    """
+    Global error handling middleware
+    Catches unhandled exceptions and returns structured error responses
+    """
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        try:
+            response = await call_next(request)
+            return response
+            
+        except Exception as e:
+            # Log error
+            print(f"[ERROR] Unhandled exception in {request.url.path}: {str(e)}")
+            
+            # Return structured error response
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "Internal server error",
+                    "message": str(e),
+                    "path": request.url.path,
+                    "method": request.method,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """
+    Collect API metrics for monitoring
+    Tracks: Request counts, response times, error rates
+    """
+    
+    def __init__(self, app):
+        super().__init__(app)
+        self.metrics = {
+            "total_requests": 0,
+            "total_errors": 0,
+            "endpoint_counts": defaultdict(int),
+            "response_times": defaultdict(list),
+            "status_codes": defaultdict(int)
+        }
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        start_time = time.time()
+        
+        try:
+            response = await call_next(request)
+            
+            # Update metrics
+            self.metrics["total_requests"] += 1
+            self.metrics["endpoint_counts"][request.url.path] += 1
+            self.metrics["status_codes"][response.status_code] += 1
+            
+            response_time = (time.time() - start_time) * 1000
+            self.metrics["response_times"][request.url.path].append(response_time)
+            
+            # Keep only last 100 response times per endpoint
+            if len(self.metrics["response_times"][request.url.path]) > 100:
+                self.metrics["response_times"][request.url.path] = \
+                    self.metrics["response_times"][request.url.path][-100:]
+            
+            if response.status_code >= 400:
+                self.metrics["total_errors"] += 1
+            
+            return response
+            
+        except Exception as e:
+            self.metrics["total_errors"] += 1
+            raise
+    
+    def get_metrics(self):
+        """Get current metrics"""
+        metrics_summary = {
+            "total_requests": self.metrics["total_requests"],
+            "total_errors": self.metrics["total_errors"],
+            "error_rate": self.metrics["total_errors"] / max(self.metrics["total_requests"], 1),
+            "top_endpoints": sorted(
+                self.metrics["endpoint_counts"].items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:10],
+            "status_codes": dict(self.metrics["status_codes"]),
+            "avg_response_times": {
+                endpoint: sum(times) / len(times) if times else 0
+                for endpoint, times in self.metrics["response_times"].items()
+            }
+        }
+        return metrics_summary
+
+
+# Utility function to configure all middleware
+def configure_middleware(app, services):
+    """
+    Configure all middleware in correct order
+    Order matters: Security -> CORS -> Rate Limit -> Cache -> Audit -> Metrics -> Error Handling
+    """
+    
+    # 1. Security headers (first)
+    app.add_middleware(SecurityHeadersMiddleware)
+    
+    # 2. CORS (already added in main.py, but here for reference)
+    # app.add_middleware(CORSMiddleware, ...)
+    
+    # 3. Rate limiting
+    app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
+    
+    # 4. Cache middleware
+    app.add_middleware(CacheMiddleware, ttl_seconds=300)
+    
+    # 5. Audit logging
+    app.add_middleware(
+        AuditMiddleware,
+        audit_service=services.audit_service,
+        auth_middleware=services.auth_middleware
+    )
+    
+    # 6. Metrics collection
+    metrics_middleware = MetricsMiddleware(app)
+    app.add_middleware(MetricsMiddleware)
+    
+    # 7. Request logging (development only)
+    # app.add_middleware(RequestLoggingMiddleware, log_bodies=False)
+    
+    # 8. Error handling (last)
+    app.add_middleware(ErrorHandlingMiddleware)
+    
+    return metrics_middleware  # Return for metrics endpoint access
+
+
+# Health check enhancement
+def create_health_check_response(services, metrics_middleware=None):
+    """Create comprehensive health check response"""
+    health_status = {
+        "status": "healthy",
+        "version": "2.0.0",
+        "timestamp": datetime.now().isoformat(),
+        "services": {
+            "namaste_parser": "active" if services.namaste_parser else "inactive",
+            "icd11_client": "active" if services.icd_client else "inactive",
+            "mapping_engine": "active" if services.mapping_engine else "inactive",
+            "fhir_generator": "active" if services.fhir_gen else "inactive",
+            "ml_matcher": "active" if services.ml_matcher else "inactive",
+            "audit_service": "active" if services.audit_service else "inactive",
+            "auth_service": "active" if services.auth_service else "inactive"
+        }
+    }
+    
+    # Add metrics if available
+    if metrics_middleware:
+        health_status["metrics"] = metrics_middleware.get_metrics()
+    
+    return health_status
+
+// app.py
+
+"""
+Complete AYUSH Terminology Bridge API
+With ABHA Auth, Audit Trail, ML Matching, Real ICD-11 Integration
+CORS FIXED VERSION
+"""
+
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
+import time
+
+from typing import List, Dict
+
+from services.csv_parser import NAMASTEParser
+from services.icd11_client import ICD11Client
+from services.mapping_engine import MappingEngine
+from services.fhir_generator import FHIRGenerator
+from services.ml_matcher import SemanticMatcher
+from services.audit_service import AuditService
+from services.abha_auth import ABHAAuthService, AuthMiddleware
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="AYUSH Terminology Bridge API",
+    description="FHIR-compliant API for NAMASTE-ICD11 mapping with ABHA authentication",
+    version="2.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
+)
+
+# ============= CORS FIX - CRITICAL =============
+# This fixes the "blocked by CORS policy" error
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080",
+        "null",  # For file:// protocol during development
+        "*"  # Allow all origins in development (remove in production!)
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]  # Important: expose response headers to frontend
+)
+
+# Initialize services
+print("🔄 Initializing services...")
+namaste_parser = NAMASTEParser('data/namaste_sample.csv')
+namaste_parser.load_csv()
+print(f"✅ Loaded {len(namaste_parser.codes)} NAMASTE codes")
+
+icd_client = ICD11Client('config/icd11_credentials.json')
+print("✅ ICD-11 client initialized")
+
+mapping_engine = MappingEngine('data/concept_mappings.json', icd_client, namaste_parser)
+print("✅ Mapping engine ready")
+
+fhir_gen = FHIRGenerator()
+print("✅ FHIR generator ready")
+
+ml_matcher = SemanticMatcher()
+print("✅ ML matcher initialized")
+
+audit_service = AuditService()
+print("✅ Audit service ready")
+
+auth_service = ABHAAuthService()
+auth_middleware = AuthMiddleware(auth_service)
+print("✅ ABHA authentication ready")
+
+# Request/Response Models
+class LoginRequest(BaseModel):
+    user_id: str = Field(..., example="DR001")
+    password: str = Field(..., example="demo_password")
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., example="diabetes")
+    limit: Optional[int] = Field(10, ge=1, le=50)
+    use_ml: Optional[bool] = Field(True, description="Use ML semantic matching")
+
+class TranslateRequest(BaseModel):
+    namaste_code: str = Field(..., example="NAM0004")
+    use_ml: Optional[bool] = Field(True, description="Use ML hybrid matching")
+
+class ConditionRequest(BaseModel):
+    namaste_code: str = Field(..., example="NAM0004")
+    icd_codes: List[str] = Field(..., example=["TM2.7", "5A00"])
+    patient_id: str = Field(..., example="PATIENT-001")
+    abha_id: Optional[str] = Field(None, example="12-3456-7890-1234")
+
+class FHIRBundleRequest(BaseModel):
+    resource_type: Literal["Bundle"] = "Bundle"
+    entries: List[Dict]
+
+# Dependency for authentication
+async def get_current_user(request: Request, authorization: Optional[str] = Header(None)):
+    """Dependency to extract and verify user from token"""
+    # Allow OPTIONS requests to pass without authentication for CORS preflight
+    if request.method == "OPTIONS":
+        return None
+
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+
+    user = auth_middleware.authenticate_request(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return user
+
+# Middleware for request timing and audit
+@app.middleware("http")
+async def audit_middleware_func(request: Request, call_next):
+    start_time = time.time()
+    
+    # Extract user info if available
+    auth_header = request.headers.get('authorization')
+    user_id = None
+    user_role = None
+    
+    if auth_header:
+        user = auth_middleware.authenticate_request(auth_header)
+        if user:
+            user_id = user.get('user_id')
+            user_role = user.get('role')
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Calculate response time
+    response_time = (time.time() - start_time) * 1000
+    
+    # Log to audit trail (skip health checks and OPTIONS)
+    if not request.url.path.endswith('/health') and request.method != 'OPTIONS':
+        audit_service.log_api_call(
+            action_type=f"{request.method}_{request.url.path}",
+            user_id=user_id,
+            user_role=user_role,
+            endpoint=str(request.url.path),
+            method=request.method,
+            ip_address=request.client.host if request.client else "unknown",
+            user_agent=request.headers.get('user-agent'),
+            response_status=response.status_code,
+            response_time_ms=response_time
+        )
+    
+    # Add custom headers
+    response.headers["X-Response-Time"] = f"{response_time:.2f}ms"
+    response.headers["X-API-Version"] = "2.0.0"
+    
+    return response
+
+# ============= AUTHENTICATION ENDPOINTS =============
+
+@app.post("/api/auth/login", tags=["Authentication"])
+async def login(request: LoginRequest):
+    """
+    Login with ABHA credentials (mock implementation)
+    Returns JWT token for subsequent API calls
+    """
+    result = auth_service.generate_mock_abha_token(request.user_id, request.password)
+    
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Create session
+    session_id = auth_service.create_session(request.user_id)
+    result['session_id'] = session_id
+    """
+    audit_service.log_api_call(
+        action_type="LOGIN",
+        user_id=request.user_id,
+        endpoint="/api/auth/login",
+        method="POST",
+        response_status=200,
+        metadata={'session_id': session_id}
+    )
+    """
+    
+    return result
+
+@app.get("/api/auth/userinfo", tags=["Authentication"])
+async def get_userinfo(current_user: dict = Depends(get_current_user)):
+    """Get current user information"""
+    return current_user
+
+@app.post("/api/auth/logout", tags=["Authentication"])
+async def logout(current_user: dict = Depends(get_current_user)):
+    """Logout and invalidate session"""
+    audit_service.log_api_call(
+        action_type="LOGOUT",
+        user_id=current_user['user_id'],
+        endpoint="/api/auth/logout",
+        method="POST",
+        response_status=200
+    )
+    
+    return {"message": "Logged out successfully"}
+
+# ============= TERMINOLOGY ENDPOINTS =============
+
+@app.get("/", tags=["General"])
+def root():
+    """API root endpoint"""
+    return {
+        "message": "AYUSH Terminology Bridge API v2.0",
+        "features": [
+            "NAMASTE Code Management",
+            "ICD-11 Integration (TM2 + Biomedicine)",
+            "ML-based Semantic Matching",
+            "FHIR R4 Compliance",
+            "ABHA OAuth2 Authentication",
+            "Complete Audit Trail"
+        ],
+        "documentation": "/api/docs"
+    }
+
+@app.get("/api/terminology/search", tags=["Terminology"])
+async def search_namaste(
+    q: str,
+    limit: int = 10,
+    use_ml: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Search NAMASTE codes with optional ML semantic matching
+    Requires authentication
+    """
+    start_time = time.time()
+    
+    # Basic fuzzy search
+    results = namaste_parser.search_codes(q, limit)
+    
+    # Enhanced ML semantic search if requested
+    if use_ml and results:
+        # Use ML matcher to re-rank results
+        enhanced_results = []
+        for result in results:
+            semantic_score = ml_matcher.compute_similarity(q, result['display'])
+            result['semantic_score'] = semantic_score
+            result['combined_score'] = (result['match_score'] + semantic_score) / 2
+            enhanced_results.append(result)
+        
+        enhanced_results.sort(key=lambda x: x['combined_score'], reverse=True)
+        results = enhanced_results
+    
+    # Log search
+    top_result = results[0]['code'] if results else None
+    audit_service.log_search(
+        user_id=current_user['user_id'],
+        query=q,
+        results_count=len(results),
+        top_result=top_result
+    )
+    
+    response_time = (time.time() - start_time) * 1000
+    
+    return {
+        "query": q,
+        "results": results,
+        "count": len(results),
+        "ml_enabled": use_ml,
+        "response_time_ms": round(response_time, 2)
+    }
+
+@app.post("/api/terminology/translate", tags=["Terminology"])
+async def translate_code(
+    request: TranslateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Translate NAMASTE code to ICD-11 (TM2 + Biomedicine)
+    Uses hybrid fuzzy + ML semantic matching
+    """
+    start_time = time.time()
+    
+    # Get basic mapping
+    mapping = mapping_engine.translate_namaste_to_icd(request.namaste_code)
+    
+    if 'error' in mapping:
+        raise HTTPException(status_code=404, detail=mapping['error'])
+    
+    # Enhance with ML if requested
+    if request.use_ml:
+        namaste_data = mapping['namaste']
+        
+        # Get ICD candidates for re-ranking
+        tm2_matches = mapping.get('icd11_tm2_matches', [])
+        bio_matches = mapping.get('icd11_biomedicine_matches', [])
+        
+        # Re-rank using ML semantic similarity
+        for match in tm2_matches:
+            match['ml_score'] = ml_matcher.compute_similarity(
+                namaste_data['display'],
+                match['title']
+            )
+        
+        for match in bio_matches:
+            match['ml_score'] = ml_matcher.compute_similarity(
+                namaste_data['display'],
+                match['title']
+            )
+        
+        # Sort by ML score
+        tm2_matches.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
+        bio_matches.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
+        
+        mapping['ml_enhanced'] = True
+
+        mapping['icd11_tm2_matches'] = tm2_matches
+        mapping['icd11_biomedicine_matches'] = bio_matches
+
+        tm2_matches = mapping.get('icd11_tm2_matches', [])
+        bio_matches = mapping.get('icd11_biomedicine_matches', [])
+
+# Get the top match for each category to log, if they exist
+        top_tm2_match = tm2_matches[0] if tm2_matches else {}
+        top_bio_match = bio_matches[0] if bio_matches else {}
+
+    audit_service.log_translation(
+        user_id=current_user['user_id'],
+        namaste_code=request.namaste_code,
+        icd11_tm2=top_tm2_match.get('code'),
+        icd11_bio=top_bio_match.get('code'),
+        confidence_tm2=top_tm2_match.get('ml_score') or top_tm2_match.get('confidence'),
+        confidence_bio=top_bio_match.get('ml_score') or top_bio_match.get('confidence'),
+        mapping_method='ml_enhanced' if request.use_ml else 'algorithmic'
+    )
+    
+    # Log translation
+    
+    response_time = (time.time() - start_time) * 1000
+    mapping['response_time_ms'] = round(response_time, 2)
+    
+    return mapping
+
+@app.get("/api/terminology/namaste/{code}", tags=["Terminology"])
+async def get_namaste_code(
+    code: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get detailed information about a NAMASTE code"""
+    code_data = namaste_parser.get_code_by_id(code)
+    
+    if not code_data:
+        raise HTTPException(status_code=404, detail=f"NAMASTE code {code} not found")
+    
+    return {
+        "code": code,
+        "details": code_data,
+        "system": "http://namaste.ayush.gov.in",
+        "version": "1.0"
+    }
+
+@app.get("/api/terminology/icd11/{code}", tags=["Terminology"])
+async def get_icd11_entity(
+    code: str,
+    linearization: str = "mms",
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get ICD-11 entity details
+    Supports both TM2 (Traditional Medicine 2) and MMS (Biomedicine) linearizations
+    """
+    try:
+        entity = icd_client.get_entity(code, linearization)
+        
+        if not entity:
+            raise HTTPException(status_code=404, detail=f"ICD-11 code {code} not found")
+        
+        return {
+            "code": code,
+            "linearization": linearization,
+            "entity": entity,
+            "system": "http://id.who.int/icd/release/11/mms" if linearization == "mms" else "http://id.who.int/icd/release/11/tm2"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============= FHIR ENDPOINTS =============
+
+@app.post("/api/fhir/Condition", tags=["FHIR"])
+async def create_condition_resource(
+    request: ConditionRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create FHIR R4 Condition resource with dual coding
+    Links NAMASTE code with ICD-11 codes (TM2 + Biomedicine)
+    """
+    # Validate NAMASTE code
+    namaste_data = namaste_parser.get_code_by_id(request.namaste_code)
+    if not namaste_data:
+        raise HTTPException(status_code=404, detail=f"NAMASTE code {request.namaste_code} not found")
+    
+    # Create FHIR Condition
+    condition = fhir_gen.create_condition(
+        namaste_code=request.namaste_code,
+        namaste_display=namaste_data['display'],
+        icd_codes=request.icd_codes,
+        patient_id=request.patient_id,
+        abha_id=request.abha_id
+    )
+    
+    # Log FHIR resource creation
+    audit_service.log_fhir_resource(
+        user_id=current_user['user_id'],
+        resource_type='Condition',
+        resource_id=condition['id'],
+        patient_id=request.patient_id,
+        codes=[request.namaste_code] + request.icd_codes
+    )
+    
+    return condition
+
+@app.post("/api/fhir/ConceptMap", tags=["FHIR"])
+async def create_concept_map(
+    source_code: str,
+    target_codes: List[str],
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create FHIR R4 ConceptMap resource
+    Maps NAMASTE code to ICD-11 codes
+    """
+    # Validate source code
+    namaste_data = namaste_parser.get_code_by_id(source_code)
+    if not namaste_data:
+        raise HTTPException(status_code=404, detail=f"NAMASTE code {source_code} not found")
+    
+    # Get mapping details
+    mapping = mapping_engine.translate_namaste_to_icd(source_code)
+    
+    # Create ConceptMap
+    concept_map = fhir_gen.create_concept_map(
+        source_code=source_code,
+        source_display=namaste_data['display'],
+        target_codes=target_codes
+    )
+    
+    audit_service.log_fhir_resource(
+        user_id=current_user['user_id'],
+        resource_type='ConceptMap',
+        resource_id=concept_map['id'],
+        codes=[source_code] + target_codes
+    )
+    
+    return concept_map
+
+@app.get("/api/fhir/ValueSet", tags=["FHIR"])
+async def get_value_set(
+    system: str = "namaste",
+    filter: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get FHIR ValueSet for NAMASTE or ICD-11 codes
+    """
+    if system.lower() == "namaste":
+        codes = namaste_parser.codes
+        if filter:
+            codes = [c for c in codes if filter.lower() in c['display'].lower()]
+        
+        value_set = fhir_gen.create_value_set(
+            codes=codes[:50],  # Limit to 50 for performance
+            system_name="NAMASTE"
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Only NAMASTE ValueSet supported currently")
+    
+    return value_set
+
+# ============= ANALYTICS & AUDIT ENDPOINTS =============
+
+@app.get("/api/audit/recent", tags=["Audit"])
+async def get_recent_audit_logs(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get recent audit logs (admin only)"""
+    if current_user.get('role') not in ['admin', 'auditor']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    logs = audit_service.get_audit_logs(limit)
+    return {
+        "logs": logs,
+        "count": len(logs)
+    }
+
+@app.get("/api/audit/user/{user_id}", tags=["Audit"])
+async def get_user_activity(
+    user_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get activity logs for specific user"""
+    # Users can only view their own logs unless admin
+    if current_user['user_id'] != user_id and current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    logs = audit_service.get_user_activity(user_id)
+    stats = audit_service.get_user_statistics(user_id)
+    
+    return {
+        "user_id": user_id,
+        "logs": logs,
+        "statistics": stats
+    }
+
+@app.get("/api/analytics/popular-searches", tags=["Analytics"])
+async def get_popular_searches(
+    limit: int = 10,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get most popular search queries"""
+    if current_user.get('role') not in ['admin', 'researcher']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    popular = audit_service.get_popular_searches(limit)
+    return {
+        "popular_searches": popular,
+        "count": len(popular)
+    }
+
+@app.get("/api/analytics/translation-stats", tags=["Analytics"])
+async def get_translation_statistics(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get translation usage statistics"""
+    if current_user.get('role') not in ['admin', 'researcher']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    stats = audit_service.get_translation_statistics()
+    return stats
+
+@app.get("/api/analytics/dashboard-stats", tags=["Analytics"])
+async def get_dashboard_stats(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get comprehensive dashboard statistics"""
+    if current_user.get('role') not in ['admin', 'researcher']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    return {
+        "total_searches": audit_service.get_total_searches(),
+        "total_translations": audit_service.get_total_translations(),
+        "total_users": audit_service.get_total_users(),
+        "popular_codes": audit_service.get_popular_codes(10),
+        "recent_activity": audit_service.get_recent_logs(20),
+        "translation_stats": audit_service.get_translation_statistics()
+    }
+
+# ============= HEALTH CHECK =============
+
+@app.get("/api/health", tags=["General"])
+async def health_check():
+    """Health check endpoint (no auth required)"""
+    return {
+        "status": "healthy",
+        "version": "2.0.0",
+        "services": {
+            "namaste_parser": "active",
+            "icd11_client": "active",
+            "mapping_engine": "active",
+            "fhir_generator": "active",
+            "ml_matcher": "active",
+            "audit_service": "active",
+            "auth_service": "active"
+        },
+        "timestamp": time.time()
+    }
+
+# ============= OPTIONS HANDLER (CORS PREFLIGHT) =============
+
+@app.options("/{full_path:path}")
+async def options_handler(full_path: str):
+    """Handle CORS preflight requests"""
+    return JSONResponse(
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+            "Access-Control-Max-Age": "3600"
+        }
+    )
+
+# ============= ERROR HANDLERS =============
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.detail,
+            "status_code": exc.status_code,
+            "path": str(request.url)
+        }
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    print(f"[ERROR] {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "message": str(exc),
+            "path": str(request.url)
+        }
+    )
+
+if __name__ == "__main__":
+    import uvicorn
+    print("\n🚀 Starting AYUSH Terminology Bridge API v2.0")
+    print("📚 Documentation: http://localhost:8000/api/docs")
+    print("🔐 Authentication: ABHA OAuth2")
+    print("📊 Features: ML Matching + Audit Trail + FHIR R4")
+    print("🌐 CORS: Enabled for localhost:3000 and localhost:8080\n")
+    
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+

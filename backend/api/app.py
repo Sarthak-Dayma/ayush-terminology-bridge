@@ -1,6 +1,7 @@
 """
 Complete AYUSH Terminology Bridge API
 With ABHA Auth, Audit Trail, ML Matching, Real ICD-11 Integration
+CORS FIXED VERSION
 """
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
@@ -29,16 +30,22 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
-origins = [
-    "http://localhost:3000",
-]
-# CORS setup
+# ============= CORS FIX - CRITICAL =============
+# This fixes the "blocked by CORS policy" error
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080",
+        "null",  # For file:// protocol during development
+        "*"  # Allow all origins in development (remove in production!)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]  # Important: expose response headers to frontend
 )
 
 # Initialize services
@@ -108,7 +115,7 @@ async def get_current_user(request: Request, authorization: Optional[str] = Head
 
 # Middleware for request timing and audit
 @app.middleware("http")
-async def audit_middleware(request: Request, call_next):
+async def audit_middleware_func(request: Request, call_next):
     start_time = time.time()
     
     # Extract user info if available
@@ -128,18 +135,19 @@ async def audit_middleware(request: Request, call_next):
     # Calculate response time
     response_time = (time.time() - start_time) * 1000
     
-    # Log to audit trail
-    audit_service.log_api_call(
-        action_type=f"{request.method}_{request.url.path}",
-        user_id=user_id,
-        user_role=user_role,
-        endpoint=str(request.url.path),
-        method=request.method,
-        ip_address=request.client.host,
-        user_agent=request.headers.get('user-agent'),
-        response_status=response.status_code,
-        response_time_ms=response_time
-    )
+    # Log to audit trail (skip health checks and OPTIONS)
+    if not request.url.path.endswith('/health') and request.method != 'OPTIONS':
+        audit_service.log_api_call(
+            action_type=f"{request.method}_{request.url.path}",
+            user_id=user_id,
+            user_role=user_role,
+            endpoint=str(request.url.path),
+            method=request.method,
+            ip_address=request.client.host if request.client else "unknown",
+            user_agent=request.headers.get('user-agent'),
+            response_status=response.status_code,
+            response_time_ms=response_time
+        )
     
     # Add custom headers
     response.headers["X-Response-Time"] = f"{response_time:.2f}ms"
@@ -148,8 +156,6 @@ async def audit_middleware(request: Request, call_next):
     return response
 
 # ============= AUTHENTICATION ENDPOINTS =============
-
-
 
 @app.post("/api/auth/login", tags=["Authentication"])
 async def login(request: LoginRequest):
@@ -165,7 +171,7 @@ async def login(request: LoginRequest):
     # Create session
     session_id = auth_service.create_session(request.user_id)
     result['session_id'] = session_id
-    
+    """
     audit_service.log_api_call(
         action_type="LOGIN",
         user_id=request.user_id,
@@ -174,6 +180,7 @@ async def login(request: LoginRequest):
         response_status=200,
         metadata={'session_id': session_id}
     )
+    """
     
     return result
 
@@ -304,15 +311,28 @@ async def translate_code(
         bio_matches.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
         
         mapping['ml_enhanced'] = True
-    
-    # Log translation
+
+        mapping['icd11_tm2_matches'] = tm2_matches
+        mapping['icd11_biomedicine_matches'] = bio_matches
+
+        tm2_matches = mapping.get('icd11_tm2_matches', [])
+        bio_matches = mapping.get('icd11_biomedicine_matches', [])
+
+# Get the top match for each category to log, if they exist
+        top_tm2_match = tm2_matches[0] if tm2_matches else {}
+        top_bio_match = bio_matches[0] if bio_matches else {}
+
     audit_service.log_translation(
         user_id=current_user['user_id'],
-        source_code=request.namaste_code,
-        target_system='ICD-11',
-        target_codes=[m['code'] for m in mapping.get('icd11_tm2_matches', [])[:3]],
-        confidence_score=mapping.get('confidence', 0)
+        namaste_code=request.namaste_code,
+        icd11_tm2=top_tm2_match.get('code'),
+        icd11_bio=top_bio_match.get('code'),
+        confidence_tm2=top_tm2_match.get('ml_score') or top_tm2_match.get('confidence'),
+        confidence_bio=top_bio_match.get('ml_score') or top_bio_match.get('confidence'),
+        mapping_method='ml_enhanced' if request.use_ml else 'algorithmic'
     )
+    
+    # Log translation
     
     response_time = (time.time() - start_time) * 1000
     mapping['response_time_ms'] = round(response_time, 2)
@@ -466,7 +486,7 @@ async def get_recent_audit_logs(
     if current_user.get('role') not in ['admin', 'auditor']:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
-    logs = audit_service.get_recent_logs(limit)
+    logs = audit_service.get_audit_logs(limit)
     return {
         "logs": logs,
         "count": len(logs)
@@ -517,6 +537,25 @@ async def get_translation_statistics(
     stats = audit_service.get_translation_statistics()
     return stats
 
+@app.get("/api/analytics/dashboard-stats", tags=["Analytics"])
+async def get_dashboard_stats(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get comprehensive dashboard statistics"""
+    if current_user.get('role') not in ['admin', 'researcher']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """
+    return {
+        "total_searches": audit_service.get_total_searches(),
+        "total_translations": audit_service.get_total_translations(),
+        "total_users": audit_service.get_total_users(),
+        "popular_codes": audit_service.get_popular_codes(10),
+        "recent_activity": audit_service.get_recent_logs(20),
+        "translation_stats": audit_service.get_translation_statistics()
+    }
+    """
+
+    return audit_service.get_analytics_summary()
 # ============= HEALTH CHECK =============
 
 @app.get("/api/health", tags=["General"])
@@ -537,7 +576,23 @@ async def health_check():
         "timestamp": time.time()
     }
 
-# Error handlers
+# ============= OPTIONS HANDLER (CORS PREFLIGHT) =============
+
+@app.options("/{full_path:path}")
+async def options_handler(full_path: str):
+    """Handle CORS preflight requests"""
+    return JSONResponse(
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+            "Access-Control-Max-Age": "3600"
+        }
+    )
+
+# ============= ERROR HANDLERS =============
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
@@ -551,6 +606,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
+    print(f"[ERROR] {str(exc)}")
     return JSONResponse(
         status_code=500,
         content={
@@ -565,6 +621,7 @@ if __name__ == "__main__":
     print("\n🚀 Starting AYUSH Terminology Bridge API v2.0")
     print("📚 Documentation: http://localhost:8000/api/docs")
     print("🔐 Authentication: ABHA OAuth2")
-    print("📊 Features: ML Matching + Audit Trail + FHIR R4\n")
+    print("📊 Features: ML Matching + Audit Trail + FHIR R4")
+    print("🌐 CORS: Enabled for localhost:3000 and localhost:8080\n")
     
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

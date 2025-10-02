@@ -1,14 +1,16 @@
+// audit.js
+
 /**
  * Audit Logs Logic for AYUSH Terminology Bridge
  * Handles: Log viewing, filtering, export, pagination
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+// REMOVED: The line "const API_BASE_URL = 'http://localhost:8000';" was removed from here.
 
-let currentLogs = [];
+let currentLogs = []; 
 let currentPage = 1;
 let logsPerPage = 50;
-let filteredLogs = [];
+let filteredLogs = []; 
 
 // ============= INITIALIZATION =============
 
@@ -26,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Set default dates
-    setDefaultDates();
+    setDefaultDates(); 
     
     // Load audit logs
     await loadAuditLogs();
@@ -48,18 +50,16 @@ function setDefaultDates() {
 async function loadAuditLogs() {
     const limit = document.getElementById('filter-limit').value;
     const logsLoading = document.getElementById('logs-loading');
-    const logsContainer = document.getElementById('logs-container');
+    const logsContainer = document.getElementById('logs-container'); 
     
     logsLoading.style.display = 'block';
     logsContainer.style.display = 'none';
-    
     try {
         const response = await authenticatedFetch(`${API_BASE_URL}/api/audit/recent?limit=${limit}`);
         const data = await response.json();
-        
         if (response.ok) {
-            currentLogs = data.logs || [];
-            filteredLogs = currentLogs;
+            currentLogs = data.logs || []; 
+            filteredLogs = currentLogs; 
             displayLogs();
         } else {
             showNotification('Failed to load audit logs', 'error');
@@ -76,7 +76,7 @@ async function loadAuditLogs() {
 async function refreshLogs() {
     showNotification('Refreshing audit logs...', 'info');
     await loadAuditLogs();
-    showNotification('Logs refreshed!', 'success');
+    showNotification('Logs refreshed!', 'success'); 
 }
 
 // ============= APPLY FILTERS =============
@@ -116,7 +116,6 @@ function applyFilters() {
         
         return true;
     });
-    
     currentPage = 1;
     displayLogs();
     
@@ -144,7 +143,7 @@ function displayLogs() {
     const startIndex = (currentPage - 1) * logsPerPage;
     const endIndex = Math.min(startIndex + logsPerPage, filteredLogs.length);
     const pageLogs = filteredLogs.slice(startIndex, endIndex);
-    
+
     // Display logs
     let html = '';
     pageLogs.forEach(log => {
@@ -248,14 +247,13 @@ function showLogDetails(log) {
             </div>
         </div>
     `;
-    
     if (log.metadata) {
         html += `
             <div class="log-metadata">
                 <h3>Metadata</h3>
                 <pre>${JSON.stringify(log.metadata, null, 2)}</pre>
             </div>
-        `;
+        `; 
     }
     
     content.innerHTML = html;
@@ -274,7 +272,7 @@ function exportToJSON() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `audit-logs-${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `audit-logs-${new Date().toISOString().split('T')[0]}.json`; 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -291,7 +289,6 @@ function exportToCSV() {
     
     // CSV headers
     const headers = ['Timestamp', 'User ID', 'User Role', 'Action', 'Endpoint', 'Method', 'Status', 'Response Time (ms)', 'IP Address'];
-    
     // CSV rows
     const rows = filteredLogs.map(log => [
         formatDateTime(log.timestamp),
@@ -310,7 +307,6 @@ function exportToCSV() {
     rows.forEach(row => {
         csvContent += row.map(field => `"${field}"`).join(',') + '\n';
     });
-    
     // Download
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -337,10 +333,10 @@ function formatDateTime(timestamp) {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
-    });
+    }); 
 }
 
 function formatActionType(actionType) {
     if (!actionType) return 'N/A';
-    return actionType.replace(/_/g, ' ').replace(/GET |POST |PUT |DELETE /g, '');
+    return actionType.replace(/_/g, ' ').replace(/GET |POST |PUT |DELETE /g, ''); 
 }
