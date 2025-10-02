@@ -1,0 +1,368 @@
+/* ============= DASHBOARD SPECIFIC STYLES ============= */
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.dashboard-header h1 {
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+/* ============= STATS GRID ============= */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    transition: all 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.stat-icon {
+    font-size: 2.5rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    width: 70px;
+    height: 70px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stat-content h3 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.stat-content p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+/* ============= CHARTS GRID ============= */
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.chart-card {
+    min-height: 350px;
+}
+
+.chart-card canvas {
+    margin-top: 1rem;
+}
+
+/* ============= LIST CONTAINERS ============= */
+.list-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.875rem;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.2s;
+}
+
+.list-item:hover {
+    background: var(--bg-color);
+}
+
+.list-item:last-child {
+    border-bottom: none;
+}
+
+.list-item-title {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.list-item-meta {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.list-item-count {
+    background: var(--primary-color);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+/* ============= ACTIVITY CONTAINER ============= */
+.activity-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.activity-item {
+    display: flex;
+    align-items: start;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.activity-icon.search {
+    background: #dbeafe;
+}
+
+.activity-icon.translate {
+    background: #d1fae5;
+}
+
+.activity-icon.fhir {
+    background: #fef3c7;
+}
+
+.activity-icon.login {
+    background: #e0e7ff;
+}
+
+.activity-content {
+    flex: 1;
+}
+
+.activity-title {
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.activity-meta {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.activity-time {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* ============= STATS DETAILS ============= */
+.stats-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+}
+
+.stat-detail-item {
+    padding: 1rem;
+    background: var(--bg-color);
+    border-radius: 8px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.stat-detail-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.stat-detail-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* ============= FILTERS GRID ============= */
+.filters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+/* ============= EXPORT SECTION ============= */
+.export-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.export-options {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* ============= TABLE HEADER ============= */
+.table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+/* ============= PAGINATION ============= */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+#page-info {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* ============= LOG DETAILS ============= */
+.log-details {
+    font-size: 0.95rem;
+}
+
+.log-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.log-detail-row {
+    display: flex;
+    padding: 0.75rem;
+    background: var(--bg-color);
+    border-radius: 6px;
+}
+
+.log-detail-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-right: 0.5rem;
+}
+
+.log-detail-value {
+    color: var(--text-primary);
+}
+
+.log-metadata {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-color);
+    border-radius: 8px;
+}
+
+.log-metadata pre {
+    margin-top: 0.75rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.875rem;
+    border: 1px solid var(--border-color);
+}
+
+/* ============= NO DATA STATE ============= */
+.no-data {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+}
+
+.no-data p {
+    font-size: 1.125rem;
+}
+
+/* ============= AUDIT SPECIFIC ============= */
+.audit-header {
+    margin-bottom: 2rem;
+}
+
+.audit-header h1 {
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+/* ============= RESPONSIVE DASHBOARD ============= */
+@media (max-width: 768px) {
+    .dashboard-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .filters-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .export-section {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+
+    .export-options {
+        flex-direction: column;
+    }
+
+    .table-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+
+    .activity-item {
+        flex-direction: column;
+    }
+
+    .activity-time {
+        align-self: flex-start;
+    }
+}

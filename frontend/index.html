@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AYUSH Terminology Bridge - NAMASTE to ICD-11</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo-section">
+                    <img src="assets/logo.png" alt="AYUSH Logo" class="logo">
+                    <h1>AYUSH Terminology Bridge</h1>
+                </div>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link active">Search & Translate</a>
+                    <a href="dashboard.html" class="nav-link" id="dashboard-link" style="display: none;">Dashboard</a>
+                    <a href="audit.html" class="nav-link" id="audit-link" style="display: none;">Audit Logs</a>
+                </nav>
+                <div class="user-section">
+                    <div id="login-section">
+                        <button class="btn btn-primary" onclick="showLoginModal()">Login</button>
+                    </div>
+                    <div id="user-info" style="display: none;">
+                        <span id="user-name" class="user-name"></span>
+                        <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="container">
+            <div id="auth-warning" class="alert alert-warning">
+                <strong>⚠️ Authentication Required</strong>
+                <p>Please login to access AYUSH Terminology Bridge services</p>
+            </div>
+
+            <section class="search-section" id="search-section" style="display: none;">
+                <div class="card">
+                    <h2>🔍 Search NAMASTE Codes</h2>
+                    <p class="subtitle">Search for traditional medicine conditions using NAMASTE terminology</p>
+                    
+                    <div class="search-box">
+                        <input 
+                            type="text" 
+                            id="search-input" 
+                            class="form-input" 
+                            placeholder="Search for condition (e.g., diabetes, fever, arthritis)"
+                            onkeypress="handleSearchKeypress(event)"
+                        >
+                        <div class="search-options">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="use-ml-search" checked>
+                                <span>Enable ML Semantic Matching</span>
+                            </label>
+                            <input type="number" id="search-limit" class="form-input-small" value="10" min="1" max="50">
+                            <span>results</span>
+                        </div>
+                        <button class="btn btn-primary btn-large" onclick="searchCodes()">Search</button>
+                    </div>
+
+                    <div id="search-results" class="results-container"></div>
+                </div>
+            </section>
+
+            <section class="translation-section" id="translation-section" style="display: none;">
+                <div class="card">
+                    <h2>🔄 Translate NAMASTE to ICD-11</h2>
+                    <p class="subtitle">Get ICD-11 equivalents (Traditional Medicine 2 + Biomedicine)</p>
+                    
+                    <div class="translation-box">
+                        <input 
+                            type="text" 
+                            id="translate-input" 
+                            class="form-input" 
+                            placeholder="Enter NAMASTE code (e.g., NAM0004)"
+                        >
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="use-ml-translate" checked>
+                            <span>Enable ML-Enhanced Matching</span>
+                        </label>
+                        <button class="btn btn-primary btn-large" onclick="translateCode()">Translate</button>
+                    </div>
+
+                    <div id="translation-results" class="results-container"></div>
+                </div>
+            </section>
+
+            <section class="fhir-section" id="fhir-section" style="display: none;">
+                <div class="card">
+                    <h2>📋 Generate FHIR Condition Resource</h2>
+                    <p class="subtitle">Create FHIR R4 Condition with dual coding (NAMASTE + ICD-11)</p>
+                    
+                    <div class="fhir-form">
+                        <div class="form-group">
+                            <label>NAMASTE Code</label>
+                            <input type="text" id="fhir-namaste-code" class="form-input" placeholder="NAM0004">
+                        </div>
+                        <div class="form-group">
+                            <label>ICD-11 Codes (comma-separated)</label>
+                            <input type="text" id="fhir-icd-codes" class="form-input" placeholder="TM2.7, 5A00">
+                        </div>
+                        <div class="form-group">
+                            <label>Patient ID</label>
+                            <input type="text" id="fhir-patient-id" class="form-input" placeholder="PATIENT-001">
+                        </div>
+                        <div class="form-group">
+                            <label>ABHA ID (optional)</label>
+                            <input type="text" id="fhir-abha-id" class="form-input" placeholder="12-3456-7890-1234">
+                        </div>
+                        <button class="btn btn-primary btn-large" onclick="generateFHIR()">Generate FHIR Resource</button>
+                    </div>
+
+                    <div id="fhir-results" class="results-container"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeLoginModal()">&times;</span>
+            <h2>🔐 ABHA Login</h2>
+            <p class="subtitle">Login with your ABHA credentials</p>
+            
+            <form id="login-form">
+                <div class="form-group">
+                    <label>User ID</label>
+                    <input type="text" id="login-user-id" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="login-password" class="form-input" required>
+                </div>
+                
+                <div class="demo-credentials">
+                    <strong>Demo Credentials:</strong>
+                    <ul>
+                        <li><code>DR001</code> / <code>demo_password</code> (Practitioner)</li>
+                        <li><code>ADMIN001</code> / <code>admin_password</code> (Admin)</li>
+                        <li><code>RESEARCHER001</code> / <code>research_password</code> (Researcher)</li>
+                    </ul>
+                </div>
+                
+                <div id="login-error" class="alert alert-error" style="display: none;"></div>
+                
+                <button type="submit" class="btn btn-primary btn-large">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="loading-spinner" class="spinner" style="display: none;">
+        <div class="spinner-circle"></div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 Ministry of AYUSH, Government of India</p>
+            <p>AYUSH Terminology Bridge v2.0 | FHIR R4 Compliant | Powered by WHO ICD-11</p>
+        </div>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

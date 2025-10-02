@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Logs - AYUSH Terminology Bridge</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo-section">
+                    <img src="assets/logo.png" alt="AYUSH Logo" class="logo">
+                    <h1>AYUSH Terminology Bridge</h1>
+                </div>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link">Search & Translate</a>
+                    <a href="dashboard.html" class="nav-link">Dashboard</a>
+                    <a href="audit.html" class="nav-link active">Audit Logs</a>
+                </nav>
+                <div class="user-section">
+                    <span id="user-name" class="user-name"></span>
+                    <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <div class="audit-header">
+                <h1>🔍 Audit Logs</h1>
+                <p class="subtitle">Complete audit trail of all system activities</p>
+            </div>
+
+            <!-- Filters -->
+            <div class="card">
+                <h2>Filters</h2>
+                <div class="filters-grid">
+                    <div class="form-group">
+                        <label>User ID</label>
+                        <input type="text" id="filter-user" class="form-input" placeholder="Filter by user">
+                    </div>
+                    <div class="form-group">
+                        <label>Action Type</label>
+                        <select id="filter-action" class="form-input">
+                            <option value="">All Actions</option>
+                            <option value="LOGIN">Login</option>
+                            <option value="LOGOUT">Logout</option>
+                            <option value="SEARCH">Search</option>
+                            <option value="TRANSLATE">Translation</option>
+                            <option value="FHIR">FHIR Resource</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Date From</label>
+                        <input type="date" id="filter-date-from" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Date To</label>
+                        <input type="date" id="filter-date-to" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Limit</label>
+                        <input type="number" id="filter-limit" class="form-input" value="50" min="10" max="500">
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Section -->
+            <div class="card">
+                <div class="export-section">
+                    <h3>Export Logs</h3>
+                    <div class="export-options">
+                        <button class="btn btn-secondary" onclick="exportToJSON()">
+                            📄 Export as JSON
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportToCSV()">
+                            📊 Export as CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Table -->
+            <div class="card">
+                <div class="table-header">
+                    <h2>Audit Trail</h2>
+                    <button class="btn btn-primary" onclick="refreshLogs()">
+                        🔄 Refresh
+                    </button>
+                </div>
+                
+                <div id="logs-loading" class="loading" style="display: none;">
+                    <div class="spinner-circle"></div>
+                    <p>Loading audit logs...</p>
+                </div>
+
+                <div id="logs-container">
+                    <div class="table-responsive">
+                        <table class="audit-table" id="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>User ID</th>
+                                    <th>Role</th>
+                                    <th>Action</th>
+                                    <th>Endpoint</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                    <th>Response Time</th>
+                                    <th>IP Address</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body">
+                                <!-- Logs will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="no-logs" class="no-data" style="display: none;">
+                        <p>No audit logs found matching the filters</p>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination" id="pagination">
+                    <button class="btn btn-secondary" onclick="previousPage()" id="prev-btn" disabled>
+                        ← Previous
+                    </button>
+                    <span id="page-info">Page 1</span>
+                    <button class="btn btn-secondary" onclick="nextPage()" id="next-btn">
+                        Next →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Log Details Modal -->
+            <div id="log-details-modal" class="modal">
+                <div class="modal-content modal-large">
+                    <span class="modal-close" onclick="closeLogDetailsModal()">&times;</span>
+                    <h2>Audit Log Details</h2>
+                    <div id="log-details-content" class="log-details">
+                        <!-- Details will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Activity Summary -->
+            <div class="card" id="user-activity-summary" style="display: none;">
+                <h2>👤 User Activity Summary</h2>
+                <div id="user-summary-content">
+                    <!-- Summary will be populated here -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 Ministry of AYUSH, Government of India</p>
+            <p>AYUSH Terminology Bridge v2.0</p>
+        </div>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script src="js/audit.js"></script>
+</body>
+</html>

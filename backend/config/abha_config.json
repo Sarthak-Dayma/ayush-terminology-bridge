@@ -1,0 +1,178 @@
+{
+  "abha_oauth": {
+    "enabled": true,
+    "mock_mode": true,
+    "client_id": "ayush-terminology-bridge-client",
+    "client_secret": "demo_secret_change_in_production",
+    "token_url": "https://dev.abdm.gov.in/gateway/v0.5/sessions",
+    "auth_url": "https://dev.abdm.gov.in/gateway/v0.5/users/auth/init",
+    "userinfo_url": "https://dev.abdm.gov.in/gateway/v0.5/users/profile",
+    "revoke_url": "https://dev.abdm.gov.in/gateway/v0.5/sessions/logout",
+    "scope": "openid profile abha_number",
+    "grant_type": "password",
+    "token_expiry_seconds": 3600,
+    "refresh_token_expiry_seconds": 86400
+  },
+  "jwt_settings": {
+    "algorithm": "HS256",
+    "secret_key": "your-256-bit-secret-key-change-in-production",
+    "access_token_expire_minutes": 60,
+    "refresh_token_expire_days": 7,
+    "issuer": "ayush-terminology-bridge",
+    "audience": "ayush-api-users"
+  },
+  "mock_users": [
+    {
+      "user_id": "DR001",
+      "password": "demo_password",
+      "name": "Dr. Rajesh Kumar",
+      "role": "practitioner",
+      "abha_id": "12-3456-7890-1234",
+      "abha_address": "drrajesh@abdm",
+      "email": "dr.rajesh@example.com",
+      "facility": "AIIMS Delhi",
+      "specialization": "Ayurveda",
+      "license_number": "AY/DL/2020/12345",
+      "permissions": ["read", "write", "translate", "search"]
+    },
+    {
+      "user_id": "DR002",
+      "password": "demo_password",
+      "name": "Dr. Priya Sharma",
+      "role": "practitioner",
+      "abha_id": "98-7654-3210-5678",
+      "abha_address": "drpriya@abdm",
+      "email": "dr.priya@example.com",
+      "facility": "Banaras Hindu University",
+      "specialization": "Unani",
+      "license_number": "UN/UP/2019/67890",
+      "permissions": ["read", "write", "translate", "search"]
+    },
+    {
+      "user_id": "ADMIN001",
+      "password": "admin_password",
+      "name": "System Administrator",
+      "role": "admin",
+      "abha_id": "11-1111-1111-1111",
+      "abha_address": "admin@abdm",
+      "email": "admin@ayush.gov.in",
+      "facility": "AYUSH Ministry HQ",
+      "specialization": "System Administration",
+      "license_number": "ADMIN/2024/001",
+      "permissions": ["read", "write", "translate", "search", "admin", "audit", "manage_users"]
+    },
+    {
+      "user_id": "RESEARCHER001",
+      "password": "research_password",
+      "name": "Dr. Amit Verma",
+      "role": "researcher",
+      "abha_id": "22-2222-2222-2222",
+      "abha_address": "researcher@abdm",
+      "email": "amit.verma@research.in",
+      "facility": "CCRAS",
+      "specialization": "Research",
+      "license_number": "RES/2023/001",
+      "permissions": ["read", "search", "analytics", "export"]
+    },
+    {
+      "user_id": "AUDITOR001",
+      "password": "audit_password",
+      "name": "Ms. Sneha Patel",
+      "role": "auditor",
+      "abha_id": "33-3333-3333-3333",
+      "abha_address": "auditor@abdm",
+      "email": "sneha.patel@audit.gov.in",
+      "facility": "AYUSH Quality Assurance",
+      "specialization": "Compliance",
+      "license_number": "AUD/2024/001",
+      "permissions": ["read", "audit", "view_logs"]
+    }
+  ],
+  "role_permissions": {
+    "practitioner": {
+      "can_search": true,
+      "can_translate": true,
+      "can_create_fhir": true,
+      "can_view_own_audit": true,
+      "can_export_data": false,
+      "can_manage_users": false,
+      "can_view_analytics": false,
+      "rate_limit_per_minute": 100
+    },
+    "researcher": {
+      "can_search": true,
+      "can_translate": true,
+      "can_create_fhir": false,
+      "can_view_own_audit": true,
+      "can_export_data": true,
+      "can_manage_users": false,
+      "can_view_analytics": true,
+      "rate_limit_per_minute": 200
+    },
+    "auditor": {
+      "can_search": true,
+      "can_translate": false,
+      "can_create_fhir": false,
+      "can_view_own_audit": true,
+      "can_export_data": true,
+      "can_manage_users": false,
+      "can_view_analytics": true,
+      "can_view_all_audit": true,
+      "rate_limit_per_minute": 500
+    },
+    "admin": {
+      "can_search": true,
+      "can_translate": true,
+      "can_create_fhir": true,
+      "can_view_own_audit": true,
+      "can_export_data": true,
+      "can_manage_users": true,
+      "can_view_analytics": true,
+      "can_view_all_audit": true,
+      "can_manage_system": true,
+      "rate_limit_per_minute": 1000
+    }
+  },
+  "security": {
+    "require_https": false,
+    "allowed_origins": ["http://localhost:3000", "http://localhost:8000", "https://ayush-terminology.gov.in"],
+    "max_login_attempts": 5,
+    "lockout_duration_minutes": 30,
+    "session_timeout_minutes": 60,
+    "require_mfa": false,
+    "password_min_length": 8,
+    "password_require_special_char": false
+  },
+  "audit": {
+    "enabled": true,
+    "log_all_requests": true,
+    "log_request_bodies": false,
+    "log_response_bodies": false,
+    "retention_days": 90,
+    "sensitive_fields": ["password", "token", "secret", "api_key"]
+  },
+  "abha_validation": {
+    "validate_abha_format": true,
+    "abha_regex": "^\\d{2}-\\d{4}-\\d{4}-\\d{4}$",
+    "validate_abha_address": true,
+    "abha_address_regex": "^[a-zA-Z0-9._-]+@abdm$",
+    "check_abha_against_registry": false
+  },
+  "features": {
+    "ml_matching_enabled": true,
+    "batch_translation_enabled": true,
+    "fhir_validation_enabled": true,
+    "real_icd11_api_enabled": true,
+    "cache_enabled": true,
+    "rate_limiting_enabled": true,
+    "analytics_enabled": true
+  },
+  "development": {
+    "debug_mode": true,
+    "skip_auth_for_health": true,
+    "mock_abha_validation": true,
+    "log_level": "INFO",
+    "enable_swagger": true,
+    "enable_request_logging": true
+  }
+}

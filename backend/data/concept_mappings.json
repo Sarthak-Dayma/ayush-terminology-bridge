@@ -1,0 +1,462 @@
+{
+  "version": "2.0",
+  "last_updated": "2024-10-01",
+  "description": "NAMASTE to ICD-11 concept mappings with both TM2 and Biomedicine linearizations",
+  "mappings": [
+    {
+      "namaste_code": "NAM0001",
+      "namaste_display": "Jwara (Fever)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.0",
+          "display": "Fever patterns in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.95
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "MG26",
+          "display": "Fever of unknown origin",
+          "equivalence": "narrower",
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0002",
+      "namaste_display": "Kasa (Cough)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.1",
+          "display": "Respiratory manifestations in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.92
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "MD11.0",
+          "display": "Cough",
+          "equivalence": "equivalent",
+          "confidence": 0.98
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0003",
+      "namaste_display": "Shwasa (Dyspnea/Breathlessness)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.2",
+          "display": "Breathing disorders in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.90
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "MD11.5",
+          "display": "Dyspnoea",
+          "equivalence": "equivalent",
+          "confidence": 0.96
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0004",
+      "namaste_display": "Prameha (Diabetes-like condition)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.7",
+          "display": "Metabolic disorders in traditional medicine",
+          "equivalence": "related",
+          "confidence": 0.88
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "5A00",
+          "display": "Diabetes mellitus",
+          "equivalence": "narrower",
+          "confidence": 0.85
+        },
+        {
+          "code": "5A01",
+          "display": "Type 1 diabetes mellitus",
+          "equivalence": "narrower",
+          "confidence": 0.75
+        },
+        {
+          "code": "5A11",
+          "display": "Type 2 diabetes mellitus",
+          "equivalence": "narrower",
+          "confidence": 0.82
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0005",
+      "namaste_display": "Shoola (Pain)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.3",
+          "display": "Pain syndromes in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.93
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "MG30.0",
+          "display": "Chronic pain",
+          "equivalence": "broader",
+          "confidence": 0.80
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0006",
+      "namaste_display": "Sandhivata (Joint pain/Arthritis)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.4",
+          "display": "Musculoskeletal disorders in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.91
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "FA20",
+          "display": "Osteoarthritis",
+          "equivalence": "narrower",
+          "confidence": 0.87
+        },
+        {
+          "code": "FA23",
+          "display": "Rheumatoid arthritis",
+          "equivalence": "narrower",
+          "confidence": 0.78
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0007",
+      "namaste_display": "Atisara (Diarrhea)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.5",
+          "display": "Digestive disturbances in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.94
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "DD90",
+          "display": "Diarrhoea",
+          "equivalence": "equivalent",
+          "confidence": 0.97
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0008",
+      "namaste_display": "Arsha (Hemorrhoids)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.6",
+          "display": "Anorectal disorders in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.89
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "DB32.0",
+          "display": "Haemorrhoids",
+          "equivalence": "equivalent",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0009",
+      "namaste_display": "Pandu (Anemia)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.8",
+          "display": "Blood deficiency patterns in traditional medicine",
+          "equivalence": "related",
+          "confidence": 0.86
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "3A00",
+          "display": "Anaemia",
+          "equivalence": "equivalent",
+          "confidence": 0.92
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0010",
+      "namaste_display": "Kushtha (Skin diseases)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.9",
+          "display": "Skin disorders in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.90
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "EA90",
+          "display": "Dermatitis",
+          "equivalence": "narrower",
+          "confidence": 0.75
+        },
+        {
+          "code": "EA80",
+          "display": "Psoriasis",
+          "equivalence": "narrower",
+          "confidence": 0.70
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0011",
+      "namaste_display": "Unmada (Mental disorders)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.10",
+          "display": "Mental-emotional disturbances in traditional medicine",
+          "equivalence": "related",
+          "confidence": 0.83
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "6A60",
+          "display": "Schizophrenia",
+          "equivalence": "narrower",
+          "confidence": 0.65
+        },
+        {
+          "code": "6A70",
+          "display": "Schizoaffective disorder",
+          "equivalence": "narrower",
+          "confidence": 0.62
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0012",
+      "namaste_display": "Hridroga (Heart disease)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.11",
+          "display": "Cardiovascular disorders in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.88
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "BA00",
+          "display": "Heart disease",
+          "equivalence": "broader",
+          "confidence": 0.85
+        },
+        {
+          "code": "BA01",
+          "display": "Coronary artery disease",
+          "equivalence": "narrower",
+          "confidence": 0.78
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0013",
+      "namaste_display": "Raktapitta (Bleeding disorders)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.12",
+          "display": "Blood heat patterns in traditional medicine",
+          "equivalence": "related",
+          "confidence": 0.82
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "3B64",
+          "display": "Coagulation defects",
+          "equivalence": "narrower",
+          "confidence": 0.72
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0014",
+      "namaste_display": "Gulma (Abdominal mass)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.13",
+          "display": "Abdominal masses in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.87
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "ME24.0",
+          "display": "Abdominal mass",
+          "equivalence": "equivalent",
+          "confidence": 0.90
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0015",
+      "namaste_display": "Shotha (Edema/Swelling)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.14",
+          "display": "Fluid accumulation patterns in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.89
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "MG29.1",
+          "display": "Oedema",
+          "equivalence": "equivalent",
+          "confidence": 0.93
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0016",
+      "namaste_display": "Kamala (Jaundice)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.15",
+          "display": "Liver-gallbladder disorders in traditional medicine",
+          "equivalence": "related",
+          "confidence": 0.85
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "DB92.0",
+          "display": "Jaundice",
+          "equivalence": "equivalent",
+          "confidence": 0.94
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0017",
+      "namaste_display": "Vatarakta (Gout)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.16",
+          "display": "Wind-blood disorders in traditional medicine",
+          "equivalence": "related",
+          "confidence": 0.84
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "FA25.0",
+          "display": "Gout",
+          "equivalence": "equivalent",
+          "confidence": 0.91
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0018",
+      "namaste_display": "Gridhrasi (Sciatica)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.17",
+          "display": "Lower back and leg pain patterns in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.86
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "8B93",
+          "display": "Sciatica",
+          "equivalence": "equivalent",
+          "confidence": 0.92
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0019",
+      "namaste_display": "Mutrakrichra (Dysuria)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.18",
+          "display": "Urinary disorders in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.88
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "MF50.1",
+          "display": "Dysuria",
+          "equivalence": "equivalent",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "namaste_code": "NAM0020",
+      "namaste_display": "Yonivyapat (Gynecological disorders)",
+      "icd11_tm2": [
+        {
+          "code": "TM2.19",
+          "display": "Female reproductive disorders in traditional medicine",
+          "equivalence": "equivalent",
+          "confidence": 0.87
+        }
+      ],
+      "icd11_mms": [
+        {
+          "code": "GA00",
+          "display": "Female pelvic inflammatory diseases",
+          "equivalence": "narrower",
+          "confidence": 0.75
+        }
+      ]
+    }
+  ],
+  "equivalence_types": {
+    "equivalent": "The concepts are exactly the same",
+    "wider": "The source concept is broader than the target",
+    "narrower": "The source concept is narrower than the target",
+    "related": "The concepts are related but not equivalent",
+    "inexact": "There is no exact correspondence"
+  },
+  "confidence_thresholds": {
+    "high": 0.85,
+    "medium": 0.70,
+    "low": 0.50
+  },
+  "notes": [
+    "TM2 codes refer to ICD-11 Traditional Medicine 2 linearization",
+    "MMS codes refer to ICD-11 Mortality and Morbidity Statistics (Biomedicine)",
+    "Confidence scores are based on semantic analysis and expert review",
+    "Multiple target codes may be provided for comprehensive coverage",
+    "This mapping supports interoperability between AYUSH and conventional medicine"
+  ]
+}

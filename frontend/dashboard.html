@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard - AYUSH Terminology Bridge</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo-section">
+                    <img src="assets/logo.png" alt="AYUSH Logo" class="logo">
+                    <h1>AYUSH Terminology Bridge</h1>
+                </div>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link">Search & Translate</a>
+                    <a href="dashboard.html" class="nav-link active">Dashboard</a>
+                    <a href="audit.html" class="nav-link" id="audit-link-dash">Audit Logs</a>
+                </nav>
+                <div class="user-section">
+                    <span id="user-name" class="user-name"></span>
+                    <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <div class="dashboard-header">
+                <h1>📊 Analytics Dashboard</h1>
+                <p class="subtitle">Real-time insights into system usage and performance</p>
+                <button class="btn btn-primary" onclick="refreshDashboard()">
+                    <span>🔄</span> Refresh Data
+                </button>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">🔍</div>
+                    <div class="stat-content">
+                        <h3 id="total-searches">---</h3>
+                        <p>Total Searches</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🔄</div>
+                    <div class="stat-content">
+                        <h3 id="total-translations">---</h3>
+                        <p>Total Translations</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-content">
+                        <h3 id="total-users">---</h3>
+                        <p>Active Users</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚡</div>
+                    <div class="stat-content">
+                        <h3 id="avg-response-time">---</h3>
+                        <p>Avg Response Time</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-grid">
+                <!-- Usage Trends -->
+                <div class="card chart-card">
+                    <h2>📈 Usage Trends (Last 7 Days)</h2>
+                    <canvas id="usage-chart"></canvas>
+                </div>
+
+                <!-- Popular Searches -->
+                <div class="card">
+                    <h2>🔥 Popular Searches</h2>
+                    <div id="popular-searches" class="list-container">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Popular Codes -->
+                <div class="card">
+                    <h2>📋 Most Translated Codes</h2>
+                    <div id="popular-codes" class="list-container">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Translation Success Rate -->
+                <div class="card chart-card">
+                    <h2>✅ Translation Success Rate</h2>
+                    <canvas id="success-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="card">
+                <h2>⏱️ Recent Activity</h2>
+                <div id="recent-activity" class="activity-container">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Translation Statistics -->
+            <div class="card">
+                <h2>📊 Translation Statistics</h2>
+                <div id="translation-stats" class="stats-details">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 Ministry of AYUSH, Government of India</p>
+            <p>AYUSH Terminology Bridge v2.0</p>
+        </div>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

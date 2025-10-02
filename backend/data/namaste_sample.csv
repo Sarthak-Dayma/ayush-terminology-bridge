@@ -1,0 +1,51 @@
+Code,Disease_Name,System,Category,Synonyms,Description,Sanskrit_Term,ICD11_TM2,ICD11_Bio,Confidence_TM2,Confidence_Bio
+NAM0001,Vata Dosha Imbalance,Ayurveda,Dosha Disorders,Vata Vikruti|Wind disorder|Nervous disorder,Neurological symptoms due to Vata imbalance causing tremors and anxiety,Vata Vyadhi,TM2.1A00,G89.2,0.95,0.75
+NAM0002,Pitta Dosha Imbalance,Ayurveda,Dosha Disorders,Pitta Vikruti|Fire disorder|Heat disorder,Inflammatory conditions with burning sensation and hyperacidity,Pitta Vyadhi,TM2.1A01,K21.0,0.93,0.78
+NAM0003,Kapha Dosha Imbalance,Ayurveda,Dosha Disorders,Kapha Vikruti|Water disorder|Phlegm disorder,Metabolic slowdown with excess mucus production,Kapha Vyadhi,TM2.1A02,E66.9,0.91,0.72
+NAM0004,Prameha,Ayurveda,Metabolic,Madhumeha|Sweet urine disease|Diabetes,Urinary disorder with sweet urine resembling diabetes mellitus,Prameha,TM2.7,5A00,0.96,0.92
+NAM0005,Raktapitta,Ayurveda,Blood Disorders,Bleeding disorder|Blood vitiation|Hemorrhage,Bleeding manifestations from various body orifices,Raktapitta,TM2.5A02,3A10,0.89,0.76
+NAM0006,Amavata,Ayurveda,Musculoskeletal,Rheumatoid arthritis|Joint disorder|Ama disease,Autoimmune joint condition with morning stiffness,Amavata,TM2.8A01,FA20.0,0.94,0.88
+NAM0007,Pandu Roga,Ayurveda,Blood Disorders,Anemia|Pallor|Pandurog,Iron deficiency causing pallor and weakness,Pandu,TM2.5A00,3A00.0,0.92,0.85
+NAM0008,Jwara,Ayurveda,Infectious,Fever|Pyrexia|Santapa,Elevated body temperature due to infection or inflammation,Jwara,TM2.3A00,MG26,0.90,0.82
+NAM0009,Kasa,Ayurveda,Respiratory,Cough|Tussis|Throat irritation,Respiratory tract irritation with coughing,Kasa,TM2.2A01,CA00,0.91,0.84
+NAM0010,Shwasa,Ayurveda,Respiratory,Dyspnea|Breathlessness|Asthma,Breathing difficulty and wheezing,Shwasa,TM2.2A00,CA23.0,0.93,0.87
+NAM0011,Arsha,Ayurveda,Digestive,Hemorrhoids|Piles|Anorectal disorder,Swollen veins in the anorectal region,Arsha,TM2.6A03,DB31,0.95,0.90
+NAM0012,Atisara,Ayurveda,Digestive,Diarrhea|Loose stools|Pravahika,Frequent loose watery stools,Atisara,TM2.6A01,DD70,0.92,0.88
+NAM0013,Grahani,Ayurveda,Digestive,Irritable bowel|Malabsorption|Sprue,Digestive disorder with alternating diarrhea and constipation,Grahani,TM2.6A02,DA90.2,0.88,0.79
+NAM0014,Shotha,Ayurveda,Inflammatory,Edema|Swelling|Inflammation,Abnormal fluid accumulation causing swelling,Shotha,TM2.4A00,MG29.0,0.87,0.81
+NAM0015,Kustha,Ayurveda,Dermatological,Skin disease|Leprosy|Dermatosis,Various chronic skin conditions,Kustha,TM2.9A00,EA90,0.89,0.74
+NAM0016,Visarpa,Ayurveda,Dermatological,Erysipelas|Skin infection|Cellulitis,Spreading skin infection with redness,Visarpa,TM2.9A01,1F03,0.86,0.83
+NAM0017,Vatarakta,Ayurveda,Musculoskeletal,Gout|Hyperuricemia|Joint pain,Painful joint condition due to uric acid deposition,Vatarakta,TM2.8A02,FA25.0,0.94,0.91
+NAM0018,Sandhivata,Ayurveda,Musculoskeletal,Osteoarthritis|Joint degeneration|Sandhi shula,Degenerative joint disease with pain,Sandhivata,TM2.8A00,FA00.0,0.93,0.89
+NAM0019,Gridhrasi,Ayurveda,Neurological,Sciatica|Nerve pain|Radiating pain,Radiating pain along sciatic nerve,Gridhrasi,TM2.1A10,8C10.0,0.91,0.86
+NAM0020,Pakshaghata,Ayurveda,Neurological,Paralysis|Hemiplegia|Stroke,One-sided body paralysis,Pakshaghata,TM2.1A11,8B20,0.95,0.93
+NAM0021,Apasmara,Ayurveda,Neurological,Epilepsy|Seizure disorder|Convulsions,Recurrent seizures and loss of consciousness,Apasmara,TM2.1A12,8A61,0.94,0.90
+NAM0022,Unmada,Ayurveda,Psychiatric,Psychosis|Insanity|Mental disorder,Severe mental disturbance with delusions,Unmada,TM2.10A00,6A20,0.88,0.77
+NAM0023,Chittodvega,Ayurveda,Psychiatric,Anxiety|Nervousness|Mental agitation,Excessive worry and restlessness,Chittodvega,TM2.10A01,6B00,0.86,0.80
+NAM0024,Kampavata,Ayurveda,Neurological,Parkinsonism|Tremor disorder|Shaking,Progressive movement disorder with tremors,Kampavata,TM2.1A13,8A00.0,0.92,0.87
+NAM0025,Shiroroga,Ayurveda,Neurological,Headache|Cephalgia|Head pain,Various types of head pain,Shiroroga,TM2.1A14,8A80,0.89,0.84
+NAM0026,Netra Roga,Ayurveda,Ophthalmological,Eye disease|Vision disorder|Ocular condition,Various eye conditions affecting vision,Netra Roga,TM2.11A00,9A00,0.87,0.75
+NAM0027,Karna Roga,Ayurveda,ENT,Ear disease|Hearing disorder|Otic condition,Various ear conditions affecting hearing,Karna Roga,TM2.12A00,AA00,0.88,0.76
+NAM0028,Nasaroga,Ayurveda,ENT,Nasal disease|Rhinitis|Sinus disorder,Nasal congestion and inflammation,Nasaroga,TM2.12A01,CA01,0.86,0.79
+NAM0029,Mukharoga,Ayurveda,Dental,Oral disease|Mouth disorder|Dental condition,Various oral cavity disorders,Mukharoga,TM2.13A00,DA00,0.85,0.73
+NAM0030,Hridroga,Ayurveda,Cardiovascular,Heart disease|Cardiac disorder|Circulatory,Various heart conditions,Hridroga,TM2.14A00,BA00,0.90,0.82
+NAM0031,Udararoga,Ayurveda,Digestive,Abdominal disease|Ascites|Bloating,Abdominal distension and discomfort,Udararoga,TM2.6A04,DB91,0.87,0.78
+NAM0032,Gulma,Ayurveda,Digestive,Abdominal lump|Tumor|Growth,Palpable abdominal mass,Gulma,TM2.6A05,2E00,0.84,0.70
+NAM0033,Yakrit Roga,Ayurveda,Hepatic,Liver disease|Hepatic disorder|Jaundice,Liver dysfunction with jaundice,Yakrit Roga,TM2.15A00,DB90,0.91,0.85
+NAM0034,Pleeha Roga,Ayurveda,Splenic,Spleen disease|Splenic disorder|Splenomegaly,Enlarged or diseased spleen,Pleeha Roga,TM2.15A01,4A44.4,0.88,0.80
+NAM0035,Prameha Pidika,Ayurveda,Dermatological,Diabetic carbuncle|Boil|Abscess,Skin infections in diabetic patients,Prameha Pidika,TM2.9A02,1F00,0.87,0.82
+NAM0036,Vrana,Ayurveda,Surgical,Wound|Ulcer|Lesion,Non-healing wounds and ulcers,Vrana,TM2.16A00,EH90,0.89,0.81
+NAM0037,Bhagandara,Ayurveda,Surgical,Fistula-in-ano|Anal fistula|Perianal,Abnormal connection near anus,Bhagandara,TM2.16A01,DB33,0.92,0.88
+NAM0038,Mutraghata,Ayurveda,Urological,Urinary retention|Dysuria|Obstruction,Difficulty in urination,Mutraghata,TM2.17A00,GC00,0.90,0.84
+NAM0039,Ashmari,Ayurveda,Urological,Kidney stone|Urolithiasis|Calculus,Stone formation in urinary tract,Ashmari,TM2.17A01,GC20,0.94,0.91
+NAM0040,Raktapradar,Ayurveda,Gynecological,Menorrhagia|Heavy bleeding|DUB,Excessive menstrual bleeding,Raktapradar,TM2.18A00,GA20.1,0.91,0.86
+NAM0041,Yonivyapad,Ayurveda,Gynecological,Vaginal disease|Reproductive disorder|Genital,Various vaginal and uterine conditions,Yonivyapad,TM2.18A01,GA00,0.87,0.78
+NAM0042,Garbhasrava,Ayurveda,Obstetric,Miscarriage|Abortion|Pregnancy loss,Spontaneous pregnancy termination,Garbhasrava,TM2.18A02,JA00,0.93,0.89
+NAM0043,Klaibya,Ayurveda,Andrological,Erectile dysfunction|Impotence|Sexual disorder,Male sexual dysfunction,Klaibya,TM2.19A00,HA00,0.90,0.83
+NAM0044,Shukradosha,Ayurveda,Andrological,Semen disorder|Male infertility|Oligospermia,Abnormal semen quality,Shukradosha,TM2.19A01,GB00,0.88,0.80
+NAM0045,Balroga,Ayurveda,Pediatric,Childhood disease|Pediatric disorder|Child ailment,Various childhood disorders,Balroga,TM2.20A00,KA00,0.85,0.72
+NAM0046,Dhatukshaya,Ayurveda,Nutritional,Tissue depletion|Malnutrition|Emaciation,Severe nutritional deficiency,Dhatukshaya,TM2.21A00,5B50,0.86,0.77
+NAM0047,Ojo Kshaya,Ayurveda,Nutritional,Vitality loss|Weakness|Debility,Loss of vital energy and strength,Ojo Kshaya,TM2.21A01,MG22,0.84,0.74
+NAM0048,Vishama Jwara,Ayurveda,Infectious,Intermittent fever|Malaria-like|Periodic fever,Fever with intermittent pattern,Vishama Jwara,TM2.3A01,1F40,0.91,0.86
+NAM0049,Rajayakshma,Ayurveda,Infectious,Tuberculosis|Consumption|Phthisis,Chronic wasting disease of lungs,Rajayakshma,TM2.3A02,1B10,0.95,0.92
+NAM0050,Madatyaya,Ayurveda,Toxicological,Alcoholism|Intoxication|Substance abuse,Chronic alcohol dependence,Madatyaya,TM2.22A00,6C40.2,0.89,0.81
