@@ -493,6 +493,7 @@ class CustomMiddleware(BaseHTTPMiddleware):
 ## 📝 License
 
 Copyright © 2024 Ministry of AYUSH, Government of India
+MIT Licence 
 
 ---
 
@@ -510,7 +511,7 @@ Copyright © 2024 Ministry of AYUSH, Government of India
 
 - **Documentation**: http://localhost:8000/api/docs
 - **Issues**: Create GitHub issue
-- **Email**: ayush-support@gov.in
+- **Email**: daymasarthak02@gmail.com
 
 ---
 
@@ -524,6 +525,6 @@ Copyright © 2024 Ministry of AYUSH, Government of India
 
 ---
 
-**Version**: 2.0.0  
-**Last Updated**:  
+**Version**: 1.0.0  
+**Last Updated**: 8/10/25
 **Status**: Production Ready ✅
